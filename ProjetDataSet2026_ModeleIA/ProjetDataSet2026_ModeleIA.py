@@ -32,7 +32,7 @@ from colorama import Fore, Style
 colorama.init()
 
 # --- CONFIGURATION ---
-CSV_PATH = "data/metadata_10000.csv" # chemin vers le fichier dataset
+CSV_PATH = "data/metadata_captures.csv" # chemin vers le fichier dataset
 RECORDS_DIR = "records" # chemin vers les fichiers de son et de vibration       
 IMG_SIZE = (128, 128) # taille du spectrogramme
 SR = 10000 # frequence d'échantillonnage
@@ -113,14 +113,14 @@ if X is not None and len(X) > 0:
         layers.Flatten(),
         # Couche de 64 neurones qui croisent toutes les caractéristiques pour "réfléchir"
         layers.Dense(64, activation='relu'),
-        # Sortie finale : Donne la probabilité entre les 2 classes (0: Neuf, 1: Usé)
-        layers.Dense(2, activation='softmax')
+        # Sortie finale : Donne le pourcentage d'usure de 0 a 100%
+        layers.Dense(1, activation='linear')
     ])
 
     # compilation du modèle avec l'optimiseur Adam, la fonction de perte adaptée pour la classification binaire et la métrique d'exactitude
     model.compile(optimizer='adam',
-                  loss='sparse_categorical_crossentropy',
-                  metrics=['accuracy'])
+                  loss='mse',
+                  metrics=['mae'])
 
 
     # --- ENTRAÎNEMENT ---
@@ -128,7 +128,7 @@ if X is not None and len(X) > 0:
     model.fit(X_train, y_train, epochs=10, batch_size=32, validation_data=(X_test, y_test))
 
     # Sauvegarde finale
-    model.save("modele_usure_expert.keras")
-    print(f"\n{Fore.GREEN}SUCCÈS : Le modèle 'modele_usure_expert.keras' est prêt !{Style.RESET_ALL}")
+    model.save("modele_cnn_n1.keras")
+    print(f"\n{Fore.GREEN}SUCCÈS : Le modèle 'modele_cnn_n1.keras' est prêt !{Style.RESET_ALL}")
 else:
     print(f"{Fore.RED}ERREUR : Aucune donnée n'a été chargée. Vérifiez le dossier 'records'.{Style.RESET_ALL}")
