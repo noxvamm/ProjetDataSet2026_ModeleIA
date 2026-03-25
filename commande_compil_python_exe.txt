@@ -1,0 +1,2 @@
+cd "C:\Users\noaor\OneDrive\Bureau\Projet BTS 2026\ProjetDataSet2026_ModeleIA" : chemin vers programmes
+pyinstaller --onefile serveurTCP_reception.py

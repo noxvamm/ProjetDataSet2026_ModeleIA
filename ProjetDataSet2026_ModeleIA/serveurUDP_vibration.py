@@ -5,66 +5,86 @@ import time
 
 # --- CONFIGURATION ---
 HOST = '0.0.0.0'
-PORT_VIB = 9091 
-VIB_DIR = 'data/vibrations/'
+PORT_UDP = 9091 # Port unique pour l'ESP32
+DATA_DIR = 'data/'
+VIB_DIR = os.path.join(DATA_DIR, 'vibrations/')
+SON_DIR = os.path.join(DATA_DIR, 'sons/')
 TIMEOUT_PRESENCE = 3.0 
 
-if not os.path.exists(VIB_DIR):
-    os.makedirs(VIB_DIR)
+# Création des dossiers
+for d in [VIB_DIR, SON_DIR]:
+    if not os.path.exists(d):
+        os.makedirs(d)
 
 def get_current_session_id():
+    """Récupère l'ID de session depuis le fichier metadata central"""
     try:
         with open('data/metadata_captures.csv', 'r', encoding='utf-8') as f:
             lines = list(csv.reader(f))
             return lines[-1][0] if len(lines) > 1 else "0"
     except: return "0"
 
-# --- INITIALISATION ---
+# --- INITIALISATION SOCKET ---
 with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-    s.bind((HOST, PORT_VIB))
+    s.bind((HOST, PORT_UDP))
     s.setblocking(False)
     
-    print(f"✅ Serveur VIBRATIONS (UDP) prêt sur le port {PORT_VIB}...")
+    print(f"✅ Serveur MIXTE (Vibrations/Sons) prêt sur le port {PORT_UDP}...")
     
     dernier_paquet_temps = 0
     client_actif = False
-    compteur_trames = 0 # Pour ne pas saturer l'affichage
+    compteur_trames = 0
 
     while True:
         try:
             data, addr = s.recvfrom(1024) 
             
-            # Gestion de la connexion visuelle
             if not client_actif:
-                print(f"\n📡 [DEBUT FLUX] Réception de l'ESP32 ({addr})")
+                print(f"\n📡 [DEBUT FLUX] Réception de : {addr}")
                 client_actif = True
                 compteur_trames = 0
             
             dernier_paquet_temps = time.time()
             compteur_trames += 1
             
-            # --- MESSAGE DE RECEPTION TOUTES LES 50 TRAMES ---
-            if compteur_trames % 50 == 0:
-                print(f"   >>> {compteur_trames} trames reçues... (Flux en cours)", end='\r')
-
-            # --- ENREGISTREMENT ---
+            # Décodage et séparation
             trame = data.decode('utf-8').strip()
+            parts = trame.split(',')
             session_id = get_current_session_id()
-            file_path = f"{VIB_DIR}vib_{session_id}.csv"
+
+            # --- LOGIQUE DE TRI (AIGUILLAGE) ---
             
-            if not os.path.exists(file_path):
-                with open(file_path, 'w', newline='', encoding='utf-8') as f:
-                    csv.writer(f).writerow(['VX', 'VY', 'VZ', 'TEMP', 'DX', 'DY', 'DZ', 'HZX', 'HZY', 'HZZ'])
-            
-            with open(file_path, 'a', newline='', encoding='utf-8') as f:
-                csv.writer(f).writerow(trame.split(','))
+            # CAS 1 : C'est du SON (2 colonnes)
+            if len(parts) == 2:
+                file_path = f"{SON_DIR}son_{session_id}.csv"
+                if not os.path.exists(file_path):
+                    with open(file_path, 'w', newline='') as f:
+                        csv.writer(f).writerow(['Temps', 'Amplitude'])
+                
+                with open(file_path, 'a', newline='') as f:
+                    csv.writer(f).writerow(parts)
+
+            # CAS 2 : C'est de la VIBRATION (10 colonnes)
+            elif len(parts) >= 10:
+                file_path = f"{VIB_DIR}vib_{session_id}.csv"
+                if not os.path.exists(file_path):
+                    with open(file_path, 'w', newline='', encoding='utf-8') as f:
+                        header = ['Timestamp', 'VX', 'VY', 'VZ', 'ADX', 'ADY', 'ADZ', 'TEMP', 'DX', 'DY', 'DZ', 'HZX', 'HZY', 'HZZ']
+                        csv.writer(f).writerow(header)
+                
+                with open(file_path, 'a', newline='', encoding='utf-8') as f:
+                    csv.writer(f).writerow(parts)
+
+            # Affichage de progression
+            if compteur_trames % 100 == 0:
+                print(f"   >>> {compteur_trames} paquets traités (Session {session_id})", end='\r')
 
         except BlockingIOError:
             pass
 
         # --- GESTION DE LA DECONNEXION ---
         if client_actif and (time.time() - dernier_paquet_temps > TIMEOUT_PRESENCE):
-            print(f"\n❌ [STOP] Flux interrompu après {compteur_trames} trames.")
+            print(f"\n❌ [STOP] Fin de réception. {compteur_trames} paquets archivés.")
             client_actif = False
 
-        time.sleep(0.001) # Ultra rapide pour ne rater aucun paquet UDP
+        time.sleep(0.0001) # Vitesse maximale
