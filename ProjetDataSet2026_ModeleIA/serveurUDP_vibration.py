@@ -29,7 +29,7 @@ with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
     s.bind((HOST, PORT_UDP))
     s.setblocking(False)
     
-    print(f"✅ Serveur MIXTE (Vibrations/Sons) prêt sur le port {PORT_UDP}...")
+    print(f"Serveur MIXTE (Vibrations/Sons) prêt sur le port {PORT_UDP}...")
     
     dernier_paquet_temps = 0
     client_actif = False
@@ -40,7 +40,7 @@ with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
             data, addr = s.recvfrom(1024) 
             
             if not client_actif:
-                print(f"\n📡 [DEBUT FLUX] Réception de : {addr}")
+                print(f"\n[DEBUT FLUX] Réception de : {addr}")
                 client_actif = True
                 compteur_trames = 0
             
@@ -84,7 +84,7 @@ with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
 
         # --- GESTION DE LA DECONNEXION ---
         if client_actif and (time.time() - dernier_paquet_temps > TIMEOUT_PRESENCE):
-            print(f"\n❌ [STOP] Fin de réception. {compteur_trames} paquets archivés.")
+            print(f"\n[STOP] Fin de réception. {compteur_trames} paquets archivés.")
             client_actif = False
 
         time.sleep(0.0001) # Vitesse maximale
