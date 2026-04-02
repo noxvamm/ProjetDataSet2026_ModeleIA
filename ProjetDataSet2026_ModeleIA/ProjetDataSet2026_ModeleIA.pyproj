@@ -4,7 +4,7 @@
     <SchemaVersion>2.0</SchemaVersion>
     <ProjectGuid>cffa9d14-2bec-4d86-ab20-52cf11b02950</ProjectGuid>
     <ProjectHome>.</ProjectHome>
-    <StartupFile>serveurUDP_vibration.py</StartupFile>
+    <StartupFile>afficher_spectrogramme.py</StartupFile>
     <SearchPath>
     </SearchPath>
     <WorkingDirectory>.</WorkingDirectory>
@@ -21,6 +21,7 @@
     <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="afficher_spectrogramme.py" />
     <Compile Include="ProjetDataSet2026_ModeleIA.py" />
     <Compile Include="serveurTCP_metadonnes.py" />
     <Compile Include="serveurUDP_vibration.py" />

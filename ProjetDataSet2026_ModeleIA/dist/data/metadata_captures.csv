@@ -1,3 +1,4 @@
 id_session,time_session,duree,frequence_echantillonnage,matiere,vitesse_coupe,vitesse_avance,type_outil,pareur_outil,fichier_son,fichier_vibration,niveau_usure
 1,2026-03-25_10:20,51,44100,Acier,10,10,Fraise,Mandrin,son_1.csv,vib_1.csv,62
 2,2026-03-25_10:25,51,44100,Acier,10,10,Fraise,Mandrin,son_2.csv,vib_2.csv,62
+3,2026-03-26_09:11,1,44100,Acier,15,15,Fraise,Mandrin,son_3.csv,vib_3.csv,30

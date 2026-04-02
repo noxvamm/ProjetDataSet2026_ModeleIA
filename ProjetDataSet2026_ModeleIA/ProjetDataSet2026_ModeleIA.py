@@ -35,7 +35,7 @@ colorama.init()
 CSV_PATH = "data/metadata_captures.csv" # chemin vers le fichier dataset
 RECORDS_DIR = "records" # chemin vers les fichiers de son et de vibration       
 IMG_SIZE = (128, 128) # taille du spectrogramme
-SR = 10000 # frequence d'échantillonnage
+SR = 50 # frequence d'échantillonnage
 
 
 # fonction pour charger et transformer les données de son et de vibration en spectrogrammes
@@ -47,14 +47,6 @@ def charger_et_transformer(csv_path):
 
     # lecture du csv
     df = pd.read_csv(csv_path)
-    
-    # vérification du contenu du dataset
-    nb_neufs = len(df[df['niveau_usure'] == 0])
-    nb_uses = len(df[df['niveau_usure'] == 1])
-    
-    print(f"\n{Fore.CYAN}=== ANALYSE DU DATASET ==={Style.RESET_ALL}")
-    print(f"Fichiers NEUFS (0) : {nb_neufs}")
-    print(f"Fichiers USÉS  (1) : {nb_uses}")
     
     X, y = [], [] # X contient les images, y contient les labels
     print(f"\n{Fore.YELLOW}Transformation des données en spectrogrammes...{Style.RESET_ALL}")
