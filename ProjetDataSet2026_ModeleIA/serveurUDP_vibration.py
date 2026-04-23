@@ -7,8 +7,8 @@ import time
 HOST = '0.0.0.0'
 PORT_UDP = 9091 # Port unique pour l'ESP32
 DATA_DIR = 'data/'
-VIB_DIR = os.path.join(DATA_DIR, 'vibrations/')
-SON_DIR = os.path.join(DATA_DIR, 'sons/')
+VIB_DIR = os.path.join(DATA_DIR, 'records/vibrations/')
+SON_DIR = os.path.join(DATA_DIR, 'records/sons/')
 TIMEOUT_PRESENCE = 3.0 
 
 # Création des dossiers

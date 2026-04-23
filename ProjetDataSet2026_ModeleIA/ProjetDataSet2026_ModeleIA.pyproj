@@ -4,7 +4,7 @@
     <SchemaVersion>2.0</SchemaVersion>
     <ProjectGuid>cffa9d14-2bec-4d86-ab20-52cf11b02950</ProjectGuid>
     <ProjectHome>.</ProjectHome>
-    <StartupFile>afficher_spectrogramme.py</StartupFile>
+    <StartupFile>clientUDP_données.py</StartupFile>
     <SearchPath>
     </SearchPath>
     <WorkingDirectory>.</WorkingDirectory>
@@ -21,11 +21,14 @@
     <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="afficher_spectrogramme.py" />
+    <Compile Include="arch2_cnn_regularise.py" />
+    <Compile Include="arch3_transfer_learning.py" />
+    <Compile Include="arch4_double_branche.py" />
+    <Compile Include="clientUDP_données.py" />
+    <Compile Include="arch1_CNN_simple.py" />
     <Compile Include="ProjetDataSet2026_ModeleIA.py" />
     <Compile Include="serveurTCP_metadonnes.py" />
     <Compile Include="serveurUDP_vibration.py" />
-    <Compile Include="test_modele.py" />
   </ItemGroup>
   <ItemGroup>
     <Folder Include="data\" />
