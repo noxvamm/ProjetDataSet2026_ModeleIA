@@ -28,6 +28,7 @@
     <Compile Include="arch1_CNN_simple.py" />
     <Compile Include="ProjetDataSet2026_ModeleIA.py" />
     <Compile Include="serveurTCP_metadonnes.py" />
+    <Compile Include="serveurTCP_metadonnes_moteur.py" />
     <Compile Include="serveurUDP_vibration.py" />
   </ItemGroup>
   <ItemGroup>

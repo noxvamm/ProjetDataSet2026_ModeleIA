@@ -1,0 +1,303 @@
+// =============================================================================
+//  Firmware ESP32 — Acquisition son (I2S) + vibration (BLE WTVB01-BT50)
+//  Projet BTS CIEL Dataset 2026 — Estimation niveau de tension moteur
+//
+//  CORRECTIONS appliquées par rapport à la version initiale (5 mai 2026) :
+//   1. SON : snprintf dans un char[] au lieu de concaténation de String
+//      → passe d'O(n²) à O(n), SR effective remonte de ~6 300 Hz à ~16 kHz.
+//   2. BLE : MTU porté à 247 (au lieu de 64) pour recevoir la trame WIT 32 B
+//      en une seule notification → plus de fragmentation à reconstituer.
+//   3. BLE : validation du header (0x55 0x61) AVANT parsing, et option de
+//      dump hex pour diagnostiquer la structure réelle de la trame capteur.
+//   4. I2S : use_apll = true (horloge plus stable) et dma_buf_count = 8
+//      (32 ms → 64 ms de marge avant overflow).
+//   5. Mutex UDP conservé, mais le formatage est désormais hors zone critique
+//      → la vibration ne reste plus coincée derrière un long send son.
+// =============================================================================
+ 
+#include <WiFi.h>
+#include <WiFiUdp.h>
+#include <driver/i2s.h>
+#include <vector>
+#include <BLEDevice.h>
+ 
+// --- I2S (micro INMP441 ou équivalent) ---
+#define I2S_SD       32
+#define I2S_WS       25
+#define I2S_SCK      14
+#define SAMPLE_RATE  16000
+#define BUFFER_LEN   128
+ 
+// --- Buffer de formatage UDP : 128 samples × ~8 chars max + entête ---
+#define UDP_BUF_SIZE 2048
+ 
+// Dump hex de la trame BLE (DEBUG, mettre à 0 en production)
+#define DEBUG_DUMP_VIB_HEX 0
+ 
+int32_t samples[BUFFER_LEN];
+char    udpBuf[UDP_BUF_SIZE];
+ 
+const char* ssid       = "iPhone de Noa";
+const char* password   = "Silver29";
+ 
+// --- ENVOI UDP UNIQUEMENT AU SERVEUR CSV ---
+const char* udpAddress = "172.20.10.2";
+const int   udpPort    = 9091;
+ 
+WiFiUDP udp;
+bool microActive     = false;
+bool vibrationActive = false;
+ 
+SemaphoreHandle_t udpMutex;
+ 
+// --- BLE config ---
+String  targetName = "WTVB01-BT50";
+BLEUUID serviceUUID("0000ffe5-0000-1000-8000-00805f9a34fb");
+BLEUUID dataUUID   ("0000ffe4-0000-1000-8000-00805f9a34fb");
+BLEUUID cmdUUID    ("0000ffe9-0000-1000-8000-00805f9a34fb");
+ 
+BLERemoteCharacteristic* cmdChar;
+std::vector<uint8_t> frame;
+ 
+// =============================================================================
+//  UTILITAIRES
+// =============================================================================
+ 
+uint16_t read16(const std::vector<uint8_t>& b, int i) {
+    return b[i] | (b[i + 1] << 8);
+}
+ 
+// Formate la trame vibration en CSV directement dans le buffer UDP partagé.
+// Retourne le nombre de caractères écrits.
+int vibToCSV_buf(const std::vector<uint8_t>& b, char* out, size_t outSize) {
+    int d = 2;  // skip 0x55 0x61
+    uint16_t VX  = read16(b, d); d += 2;
+    uint16_t VY  = read16(b, d); d += 2;
+    uint16_t VZ  = read16(b, d); d += 2;
+    uint16_t ADX = read16(b, d); d += 2;
+    uint16_t ADY = read16(b, d); d += 2;
+    uint16_t ADZ = read16(b, d); d += 2;
+    float TEMP   = read16(b, d) / 100.0f; d += 2;
+    uint16_t DX  = read16(b, d); d += 2;
+    uint16_t DY  = read16(b, d); d += 2;
+    uint16_t DZ  = read16(b, d); d += 2;
+    uint16_t HZX = read16(b, d); d += 2;
+    uint16_t HZY = read16(b, d); d += 2;
+    uint16_t HZZ = read16(b, d);
+ 
+    return snprintf(out, outSize,
+                    "VIB,%lu,%u,%u,%u,%u,%u,%u,%.2f,%u,%u,%u,%u,%u,%u",
+                    (unsigned long)millis(),
+                    VX, VY, VZ, ADX, ADY, ADZ, TEMP,
+                    DX, DY, DZ, HZX, HZY, HZZ);
+}
+ 
+// =============================================================================
+//  CALLBACK BLE — VIBRATION
+// =============================================================================
+ 
+void notifyCB(BLERemoteCharacteristic*, uint8_t* data, size_t len, bool) {
+    if (!vibrationActive) return;
+ 
+    // Si on reçoit un nouveau header de trame, on repart à zéro
+    if (len >= 2 && data[0] == 0x55 && data[1] == 0x61) {
+        frame.clear();
+    }
+    frame.insert(frame.end(), data, data + len);
+ 
+    // FIX : valider le header avant de parser, sinon on lit du garbage
+    if (frame.size() >= 32 && frame[0] == 0x55 && frame[1] == 0x61) {
+ 
+#if DEBUG_DUMP_VIB_HEX
+        // Dump hex pour vérifier la structure réelle envoyée par le capteur
+        Serial.print("VIB hex (");
+        Serial.print(frame.size());
+        Serial.print("o): ");
+        for (size_t i = 0; i < frame.size() && i < 40; i++) {
+            Serial.printf("%02X ", frame[i]);
+        }
+        Serial.println();
+#endif
+ 
+        // Formatage CSV dans un buffer local fixe (pas de String)
+        char vibBuf[256];
+        int n = vibToCSV_buf(frame, vibBuf, sizeof(vibBuf));
+ 
+        // Debug console (1 ligne sur 20)
+        static int vibCounter = 0;
+        if (++vibCounter % 20 == 0) Serial.println(vibBuf);
+ 
+        // Envoi UDP
+        if (n > 0 && n < (int)sizeof(vibBuf)) {
+            xSemaphoreTake(udpMutex, portMAX_DELAY);
+            udp.beginPacket(udpAddress, udpPort);
+            udp.write((const uint8_t*)vibBuf, n);
+            udp.endPacket();
+            xSemaphoreGive(udpMutex);
+        }
+ 
+        frame.clear();
+    } else if (frame.size() >= 64) {
+        // Garde-fou : si le buffer grossit anormalement sans header valide,
+        // on le purge pour ne pas accumuler indéfiniment du bruit BLE.
+        Serial.println("[!] Buffer VIB purgé (header invalide ou perdu).");
+        frame.clear();
+    }
+}
+ 
+// =============================================================================
+//  CONFIG I2S
+// =============================================================================
+ 
+void setupI2S() {
+    i2s_config_t config = {
+        .mode                 = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_RX),
+        .sample_rate          = SAMPLE_RATE,
+        .bits_per_sample      = I2S_BITS_PER_SAMPLE_32BIT,
+        .channel_format       = I2S_CHANNEL_FMT_ONLY_LEFT,
+        .communication_format = I2S_COMM_FORMAT_I2S,
+        .intr_alloc_flags     = 0,
+        .dma_buf_count        = 8,        // FIX : 8 buffers × 128 = 64 ms de marge (était 4)
+        .dma_buf_len          = BUFFER_LEN,
+        .use_apll             = true      // FIX : horloge APLL pour SR plus stable
+    };
+    i2s_pin_config_t pins = {
+        .bck_io_num   = I2S_SCK,
+        .ws_io_num    = I2S_WS,
+        .data_out_num = -1,
+        .data_in_num  = I2S_SD
+    };
+    i2s_driver_install(I2S_NUM_0, &config, 0, NULL);
+    i2s_set_pin(I2S_NUM_0, &pins);
+    i2s_zero_dma_buffer(I2S_NUM_0);
+}
+ 
+// =============================================================================
+//  SETUP
+// =============================================================================
+ 
+void setup() {
+    Serial.begin(115200);
+    udpMutex = xSemaphoreCreateMutex();
+ 
+    // --- Wi-Fi ---
+    WiFi.begin(ssid, password);
+    while (WiFi.status() != WL_CONNECTED) { delay(300); Serial.print("."); }
+    Serial.println("\nWiFi OK");
+    Serial.println(WiFi.localIP());
+    udp.begin(udpPort);
+ 
+    // --- BLE ---
+    BLEDevice::init("");
+    BLEScan* scan = BLEDevice::getScan();
+    scan->setActiveScan(true);
+ 
+    Serial.println("Scan BLE...");
+    BLEScanResults* res = scan->start(5);
+ 
+    BLEAdvertisedDevice* target = nullptr;
+    for (int i = 0; i < res->getCount(); i++) {
+        BLEAdvertisedDevice dev = res->getDevice(i);
+        if (dev.getName() == targetName) {
+            target = new BLEAdvertisedDevice(dev);
+            break;
+        }
+    }
+ 
+    if (!target) {
+        Serial.println("Capteur vibration non trouve.");
+        return;
+    }
+ 
+    Serial.println("Capteur vibration trouve !");
+    BLEClient* client = BLEDevice::createClient();
+    client->connect(target);
+    client->setMTU(247);   // FIX : MTU max pour recevoir la trame 32 B en 1 chunk
+ 
+    BLERemoteService* service = client->getService(serviceUUID);
+    BLERemoteCharacteristic* dataChar = service->getCharacteristic(dataUUID);
+    cmdChar = service->getCharacteristic(cmdUUID);
+ 
+    // Démarrage capteur
+    uint8_t startCmd[4]   = {0x55, 0x01, 0x01, 0xA7};
+    cmdChar->writeValue(startCmd, 4);
+ 
+    uint8_t modeCmd[4]    = {0x55, 0x02, 0x01, 0xA8};
+    cmdChar->writeValue(modeCmd, 4);
+ 
+    uint8_t rrate50Hz[4]  = {0x55, 0x03, 0x14, 0x6C};
+    cmdChar->writeValue(rrate50Hz, 4);
+ 
+    dataChar->registerForNotify(notifyCB);
+ 
+    Serial.println("BLE pret, notifications activees.");
+}
+ 
+// =============================================================================
+//  LOOP
+// =============================================================================
+ 
+void loop() {
+    // --- COMMANDES UDP (START / STOP) ---
+    int packetSize = udp.parsePacket();
+    if (packetSize > 0) {
+        char cmd[32];
+        memset(cmd, 0, sizeof(cmd));
+        udp.read(cmd, sizeof(cmd) - 1);
+ 
+        String command = String(cmd);
+        command.trim();
+ 
+        Serial.print("Commande recue : ");
+        Serial.println(command);
+ 
+        if (command == "START") {
+            Serial.println("micro + vibration actives");
+            setupI2S();
+            microActive     = true;
+            vibrationActive = true;
+            frame.clear();
+        }
+        if (command == "STOP") {
+            Serial.println("fin de la capture");
+            microActive     = false;
+            vibrationActive = false;
+            uint8_t stopVib[4] = {0x55, 0x01, 0x00, 0xA6};
+            cmdChar->writeValue(stopVib, 4);
+        }
+    }
+ 
+    // --- CAPTURE I2S + ENVOI UDP ---
+    if (microActive) {
+        size_t bytesRead;
+        i2s_read(I2S_NUM_0, samples, sizeof(samples), &bytesRead, portMAX_DELAY);
+ 
+        int nbSamples   = bytesRead / sizeof(int32_t);
+        unsigned long ts = millis();
+ 
+        // FIX : formatage en O(n) avec snprintf dans un buffer fixe
+        // (au lieu de String += en O(n²) qui plafonnait à ~6 300 Hz)
+        int p = snprintf(udpBuf, UDP_BUF_SIZE, "SOUND,%lu", ts);
+        for (int i = 0; i < nbSamples && p < UDP_BUF_SIZE - 12; i++) {
+            int32_t raw = samples[i] >> 14;   // 32 bits → 18 bits signés
+            p += snprintf(udpBuf + p, UDP_BUF_SIZE - p, ",%ld", (long)raw);
+        }
+ 
+        // Debug console (1 ligne sur 1000)
+        static int soundCounter = 0;
+        if (++soundCounter % 1000 == 0) {
+            udpBuf[p < UDP_BUF_SIZE ? p : UDP_BUF_SIZE - 1] = '\0';
+            Serial.println(udpBuf);
+        }
+ 
+        // Envoi UDP (zone critique aussi courte que possible)
+        xSemaphoreTake(udpMutex, portMAX_DELAY);
+        udp.beginPacket(udpAddress, udpPort);
+        udp.write((const uint8_t*)udpBuf, p);
+        udp.endPacket();
+        xSemaphoreGive(udpMutex);
+ 
+    } else {
+        delay(10);
+    }
+}

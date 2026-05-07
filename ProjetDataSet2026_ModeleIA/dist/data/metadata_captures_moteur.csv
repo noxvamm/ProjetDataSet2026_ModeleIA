@@ -1,0 +1,5 @@
+id_session,time_session,condition_charge,duree,frequence_son,frequence_vibration,fichier_son,fichier_vibration,niveau_tension
+1,2026-05-05_15:19,A_vide,15,44100,44100,son_1.csv,vib_1.csv,50
+2,2026-05-05_15:20,B_frein,15,16000,50,son_2.csv,vib_2.csv,50
+3,2026-05-05_15:36,B_frein,15,60000,50,son_3.csv,vib_3.csv,50
+4,2026-05-06_11:34,A_vide,15,60000,50,son_4.csv,vib_4.csv,50

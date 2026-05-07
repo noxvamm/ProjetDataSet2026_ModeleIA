@@ -2,7 +2,7 @@
 
 
 a = Analysis(
-    ['serveurUDP_vibration.py'],
+    ['serveurTCP_metadonnes_moteur.py'],
     pathex=[],
     binaries=[],
     datas=[],
@@ -22,7 +22,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='serveurUDP_vibration',
+    name='serveurTCP_metadonnes_moteur',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
