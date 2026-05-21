@@ -81,6 +81,8 @@
 
 ## Fait récemment
 
+- [x] **[Doc / E6]** **Dossier de projet BTS 2026 rédigé** (19 mai 2026, 4 jours avant l'échéance du 22 mai 15h) — fichier `Dossier_Projet_BTS_2026.docx` à la racine du projet. 26 pages A4. Contenu : page de garde, sommaire auto, intro, mise en situation, partie physique, partie individuelle Noa (acquisition + IA + 5 fiches de recette unitaires + recette d'intégration), squelettes Hugo/Mederick/Ege, conclusion, annexes. Script de génération `outputs/dossier_projet.py` réutilisable pour itération. Reste à faire : faire compléter les 3 squelettes par l'équipe, insérer le lien GitHub/Drive des annexes, valider intro/conclusion collectivement, export PDF final.
+- [x] **[Projet]** **Option A appliquée — `|VZ|` seul au lieu de magnitude 3-axes** (6 mai 2026) dans `arch4_double_branche.py`. Raison : VX/VY bloqués à 271/1 (axes perpendiculaires à la vibration dominante, confirmé par manuel WIT). La magnitude 3-axes aurait un plancher de ~271 qui écrase la dynamique basse. Ancienne ligne conservée en commentaire. CLAUDE.md mis à jour avec le justificatif (utile pour l'oral E6).
 - [x] **[Projet]** **Firmware ESP32 corrigé** (5 mai 2026) — fichier `firmware_esp32_corrige.ino` à la racine du projet :
   - Son : remplacement `String +=` → `snprintf` dans buffer fixe O(n) au lieu d'O(n²) → bottleneck SR son levé.
   - BLE : `setMTU(247)` (au lieu de 64) pour recevoir la trame WIT en 1 chunk.

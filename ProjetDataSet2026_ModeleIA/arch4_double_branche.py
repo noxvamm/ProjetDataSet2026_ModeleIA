@@ -10,6 +10,7 @@
 #   - Mel vibration adapté à un signal basse-fréquence (n_fft, hop_length)
 #   - Split TRAIN/TEST par capture (pas par segment) → pas de data leakage
 #   - Évaluation : MAE moyennée par capture (1 prédiction = moyenne des segments)
+#   - Vibration : |VZ| seul (au lieu de magnitude 3-axes) — voir CLAUDE.md (Option A)
 # =============================================================================
 
 import os
@@ -185,7 +186,15 @@ def charger_sessions(csv_path):
 
             path_vib  = os.path.join(RECORDS_DIR, 'vibrations', row['fichier_vibration'])
             data_vibs = np.loadtxt(path_vib, delimiter=',', skiprows=1, usecols=(1, 2, 3))
-            magnitude = np.sqrt(data_vibs[:, 0] ** 2 + data_vibs[:, 1] ** 2 + data_vibs[:, 2] ** 2)
+            # NOTE (6 mai 2026) — Décision Option A : on n'utilise que l'axe Z.
+            # Le capteur WTVB01-BT50 est monté tel que VX et VY sont perpendiculaires
+            # à la direction principale de vibration du moteur → VX≈271 cst et VY≈1 cst
+            # (bruit interne MEMS sous seuil). La magnitude 3-axes √(VX²+VY²+VZ²)
+            # aurait un plancher de ~271 qui écrase la dynamique basse de VZ.
+            # En prenant |VZ| seul, on récupère la vraie dynamique signal du moteur.
+            # Réversible : décommenter la ligne du dessous pour revenir à la magnitude 3 axes.
+            # magnitude = np.sqrt(data_vibs[:, 0] ** 2 + data_vibs[:, 1] ** 2 + data_vibs[:, 2] ** 2)
+            magnitude = np.abs(data_vibs[:, 2])
             verifier_frequence_effective(len(magnitude), duree, sr_vib_declare, "vibration", session_id)
 
             sessions.append({

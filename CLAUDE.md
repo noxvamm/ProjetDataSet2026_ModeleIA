@@ -22,8 +22,10 @@
 
 ### Capteurs
 
-- **Microphone I2S** — son du moteur, échantillonnage **16 kHz**.
-- **WTVB01-BT50** — capteur de vibration BLE, **50 Hz** déclaré (en pratique limité à ~9,5 Hz à cause du conflit radio BLE/WiFi sur l'ESP32 — non bloquant mais à mentionner).
+- **Microphone I2S** — son du moteur, échantillonnage **16 kHz** théorique. SR effective mesurée : **10,7 kHz** après correction du bug `String +=` du firmware ESP32 (5 mai 2026). Contenu utile sous 1 kHz → 10,7 kHz est largement suffisant pour ce projet (Nyquist = 5,4 kHz).
+- **WTVB01-BT50** — capteur de vibration BLE, **50 Hz** déclaré (en pratique limité à ~10 Hz à cause du conflit radio BLE/WiFi sur l'ESP32 — non bloquant mais à mentionner).
+  - ⚠️ **VX et VY bloqués à 271 et 1** dans notre configuration → axes perpendiculaires à la vibration dominante du moteur, valeurs = bruit MEMS sous seuil. Le manuel WIT confirme que la trame est correctement parsée (28 octets, ordre VX VY VZ ADX ADY ADZ TEMP DX DY DZ HZX HZY HZZ).
+  - **Décision Option A (6 mai 2026)** : on n'utilise que `|VZ|` comme signal vibration, pas la magnitude 3-axes. Raison : la magnitude `√(VX²+VY²+VZ²)` aurait un plancher de ~271 (= √(271²+1²)) qui écrase la dynamique basse de VZ. Avec `|VZ|` seul on récupère la vraie variation. Implémentation dans `arch4_double_branche.py` (l'ancienne ligne est conservée en commentaire pour réversibilité). **Argument oral E6** : décision d'ingénierie justifiée par analyse statistique + manuel constructeur, pas un défaut hardware ignoré.
 
 ### Conditions de charge (2 retenues — la 3ᵉ avec frein + poids a été abandonnée pour reproductibilité)
 
@@ -104,12 +106,12 @@ Modèle IA double branche : arch4_double_branche.py
 - `commande_compil_python_exe.txt` — commandes de compilation Python → exécutable.
 - `TASKS.md` — liste de tâches active.
 
-## Équipe projet
+## Équipe projet (4 membres)
 
-- **Hugo Cypré** — hugocypre@gmail.com — dev IHM / réseau.
-- **KIKI3** — membre équipe.
-- **Adrien** — membre équipe.
-- **Étudiant IHM** — en charge de l'IHM Qt côté capteurs.
+- **Noa Orand** — IA (arch4 double branche) + pipeline d'acquisition (serveur TCP + client UDP + formats CSV).
+- **Hugo Cypré** — hugocypre@gmail.com — dev IHM Qt / réseau.
+- **Mederick** — membre équipe.
+- **Ege** — membre équipe.
 
 ## Révisions BTS — Notion
 
@@ -151,3 +153,32 @@ Pareil pour les nouvelles tâches qui émergent en cours de discussion : Claude 
 ## Tâche planifiée active
 
 - **`brief-matinal-noa`** — brief quotidien automatique : avancement projet (TASKS.md + Notion), 3-5 actus cybersécurité, état des marchés financiers.
+
+## Rapport BTS — Dossier de projet 2026
+
+**Échéances** :
+- **22 mai 2026 à 15 h** : dépôt PDF sur Elea (1 seul fichier par équipe).
+- **29 mai 2026 à 17 h** : version papier reliée à remettre au professeur (1 exemplaire).
+
+**Plan imposé** :
+1. Introduction (collective)
+2. Mise en situation : présentation du projet, analyse (collective)
+3. Partie physique (collective)
+4. Développements unitaires (validés/non validés) + intégration validée — **partie individuelle**, 3 ou 4 sections selon taille équipe
+5. Conclusion (collective)
+
+**Annexes en ligne** (lien dans le PDF) :
+- Codes source + base de données
+- Fiches de recette unitaires + fiches de recette d'intégration
+- Documentations (notice d'installation, notice d'utilisation)
+
+## Pause projet — où on en est techniquement (à reprendre après rapport)
+
+État au 18 mai 2026 — campagne 110 captures **non démarrée**. Avant de la lancer, points à trancher :
+1. **Son** : ✅ SR effective remontée à **15 804 Hz** (99 % de la cible 16 kHz) après firmware corrigé (snprintf, APLL, dma_buf×8).
+2. **Test "moteur off" du 18 mai** ambigu : `niveau_tension = 30` dans le CSV alors que "moteur ne tourne pas" → savoir si l'alim était débranchée du secteur ou juste à 0/30 %. À refaire avec alim physiquement débranchée pour avoir une vraie référence "silence".
+3. **Signal son moteur OFF a la même RMS que moteur 50 %** (~8 800) avec énergie massivement concentrée sous 50 Hz → pickup électromagnétique probable. Ajouter un filtre passe-haut 50 Hz côté preprocessing IA.
+4. **Vibration VZ : step de 256 dans les valeurs** (8738, 8994, 9250…) → l'octet bas VZL est bloqué à `0x22`, on n'a que 8 bits utiles de dynamique. Confirmer si c'est limitation capteur ou parsing.
+5. **VZ moteur off (10 619) > VZ moteur 50 % (3 499)** → bizarre, à creuser. Soit vibration ambiante, soit comportement capteur dépendant de l'état moteur.
+6. **Option A déjà appliquée** dans `arch4` : magnitude vibration = `|VZ|` (au lieu de √3-axes).
+7. **À faire post-rapport** : refaire le test moteur réellement off, ajouter passe-haut 50 Hz, puis lancer Phase A des 110 captures.
