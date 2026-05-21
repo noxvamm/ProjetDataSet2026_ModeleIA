@@ -168,6 +168,20 @@ def signal_vers_mel_vib(signal, sr):
 #  CHARGEMENT + CONSTRUCTION DES SEGMENTS
 # =============================================================================
 
+def tronquer_duree(arr, duree_s):
+    """Coupe un tableau [temps_ms, ...] à ses `duree_s` premières secondes.
+       Garde-fou contre les fichiers concaténés (bug d'incrémentation session_id)
+       qui contiennent plusieurs captures collées : on ne conserve que la 1ère.
+       Les timestamps (col 0) sont en millisecondes (son 'Temps', vib 'Timestamp')."""
+    if arr.ndim == 1 or len(arr) == 0:
+        return arr
+    t = arr[:, 0]
+    mask = (t - t[0]) <= (duree_s * 1000.0)
+    if mask.sum() < 10:          # timestamps inattendus → on ne tronque pas
+        return arr
+    return arr[mask]
+
+
 def charger_sessions(csv_path):
     """Lit le CSV et retourne une liste de dicts (signaux bruts par capture)."""
     df = pd.read_csv(csv_path)
@@ -181,11 +195,15 @@ def charger_sessions(csv_path):
             niveau         = float(row['niveau_tension']) / 100.0
 
             path_son = os.path.join(RECORDS_DIR, 'sons', row['fichier_son'])
-            data_son = np.loadtxt(path_son, delimiter=',', skiprows=1, usecols=1)
+            arr_son  = np.loadtxt(path_son, delimiter=',', skiprows=1, usecols=(0, 1))
+            arr_son  = tronquer_duree(arr_son, duree)   # garde les `duree` 1ères secondes
+            data_son = arr_son[:, 1]
             verifier_frequence_effective(len(data_son), duree, sr_son_declare, "son", session_id)
 
             path_vib  = os.path.join(RECORDS_DIR, 'vibrations', row['fichier_vibration'])
-            data_vibs = np.loadtxt(path_vib, delimiter=',', skiprows=1, usecols=(1, 2, 3))
+            arr_vib   = np.loadtxt(path_vib, delimiter=',', skiprows=1, usecols=(0, 1, 2, 3))
+            arr_vib   = tronquer_duree(arr_vib, duree)
+            data_vibs = arr_vib[:, 1:4]
             # NOTE (6 mai 2026) — Décision Option A : on n'utilise que l'axe Z.
             # Le capteur WTVB01-BT50 est monté tel que VX et VY sont perpendiculaires
             # à la direction principale de vibration du moteur → VX≈271 cst et VY≈1 cst
