@@ -4,7 +4,7 @@
     <SchemaVersion>2.0</SchemaVersion>
     <ProjectGuid>cffa9d14-2bec-4d86-ab20-52cf11b02950</ProjectGuid>
     <ProjectHome>.</ProjectHome>
-    <StartupFile>clientUDP_données.py</StartupFile>
+    <StartupFile>arch4_double_branche.py</StartupFile>
     <SearchPath>
     </SearchPath>
     <WorkingDirectory>.</WorkingDirectory>
@@ -26,6 +26,7 @@
     <Compile Include="arch4_double_branche.py" />
     <Compile Include="clientUDP_données.py" />
     <Compile Include="arch1_CNN_simple.py" />
+    <Compile Include="predire_tension.py" />
     <Compile Include="ProjetDataSet2026_ModeleIA.py" />
     <Compile Include="serveurTCP_metadonnes.py" />
     <Compile Include="serveurTCP_metadonnes_moteur.py" />
