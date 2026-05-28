@@ -9,8 +9,7 @@ PORT_APP = 9090
 METADATA_FILE = 'data/metadata_captures_moteur.csv'
 
 def init_metadata():
-    """Crée le header si le fichier n'existe pas encore"""
-    os.makedirs(os.path.dirname(METADATA_FILE), exist_ok=True)
+    os.makedirs(os.path.dirname(METADATA_FILE), exist_ok=True) #Crée le header du fichier de métadonnées s'il n'existe pas déjà
     if not os.path.exists(METADATA_FILE):
         header = [
             'id_session', 'time_session',
@@ -23,7 +22,7 @@ def init_metadata():
             csv.writer(f).writerow(header)
 
 
-# Mapping des libellés de condition envoyés par l'IHM vers les valeurs canoniques
+# Mapping des conditions de charge possibles vers des catégories canoniques (A_vide ou B_frein).
 CONDITION_MAP = {
     'aucune':    'A_vide',
     'a_vide':    'A_vide',
@@ -38,22 +37,19 @@ CONDITION_MAP = {
 
 
 def normaliser_condition(valeur_brute):
-    """Convertit le libellé envoyé par l'IHM en condition canonique.
-    Renvoie la valeur d'origine (en clair) si elle n'est pas reconnue, pour
-    éviter de perdre l'info en cas de nouveau libellé."""
-    cle = valeur_brute.strip().lower()
+    cle = valeur_brute.strip().lower() # Convertit le libellé envoyé par l'IHM en condition canonique.
     return CONDITION_MAP.get(cle, valeur_brute.strip())
 
+# Cette fonction lit le fichier de métadonnées pour déterminer le prochain ID de session à utiliser en fonction du nombre de lignes existantes.
 def get_next_id():
-    """Calcule l'ID en fonction du nombre de lignes existantes"""
     try:
         with open(METADATA_FILE, 'r', encoding='utf-8') as f:
             return sum(1 for line in f)
     except FileNotFoundError:
         return 1
 
+# Lit le stream TCP jusqu'a la fin de la transmission (indiquée par une fermeture de connexion) ou jusqu'à un timeout pour éviter de bloquer indéfiniment.
 def read_all(conn):
-    """Lit tout le stream TCP jusqu'à la fermeture de la connexion"""
     buffer = b""
     conn.settimeout(2.0)  # Au cas où la fermeture tarde
     try:
@@ -80,7 +76,7 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             if not raw:
                 continue
 
-            # --- FILTRAGE : on ignore les lignes vides et le marqueur "START" ---
+            # On filtre les lignes vides et le marqueur START
             lignes = [l.strip() for l in raw.splitlines() if l.strip() and l.strip() != "START"]
 
             if not lignes:
@@ -106,8 +102,8 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                     parts[1],       # duree
                     parts[2],       # frequence_son
                     parts[3],       # frequence_vibration
-                    nom_fichier_son,
-                    nom_fichier_vib,
+                    nom_fichier_son, # chemin des fichiers sons
+                    nom_fichier_vib, # chemin des fichiers vibrations
                     parts[4]        # niveau_tension
                 ]
 
