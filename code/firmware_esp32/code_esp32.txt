@@ -37,8 +37,8 @@
 int32_t samples[BUFFER_LEN];
 char    udpBuf[UDP_BUF_SIZE];
  
-const char* ssid       = "iPhone de Noa";
-const char* password   = "Silver29";
+const char* ssid       = "<VOTRE_SSID_WIFI>";
+const char* password   = "<VOTRE_MOT_DE_PASSE>";
  
 // --- ENVOI UDP UNIQUEMENT AU SERVEUR CSV ---
 const char* udpAddress = "172.20.10.2";

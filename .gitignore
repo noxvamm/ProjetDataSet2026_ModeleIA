@@ -361,3 +361,24 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+# --- Ajouts annexes BTS (memoire interne, secrets, artefacts) ---
+# Memoire de travail interne, ne PAS publier
+CLAUDE.md
+TASKS.md
+Analyse_rapport.md
+
+# Cache Cowork / agents
+.claude/
+
+# Visual Studio cache (deja partiellement couvert plus haut)
+.vs/
+
+# Identifiants en dur : ne JAMAIS committer
+*credentials*
+*secrets*
+.env
+.env.local
+
+# Fichiers temporaires OneDrive
+*.tmp
+~$*
