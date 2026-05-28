@@ -10,7 +10,15 @@
 #    python predire_tension.py son_X.csv vib_X.csv
 #    python predire_tension.py son_X.csv vib_X.csv --condition A_vide
 #    python predire_tension.py son_X.csv vib_X.csv --condition B_frein --reel 60
-#    python predire_tension.py --id 47          (cherche son_47/vib_47 dans le dataset)
+#
+#    # Par ID dans le CSV d'entraînement (défaut)
+#    python predire_tension.py --id 3
+#
+#    # Par ID dans le CSV de test
+#    python predire_tension.py --id 1 --csv test
+#
+#    # Chemin complet vers n'importe quel CSV de métadonnées
+#    python predire_tension.py --id 2 --csv dist/data/metadata_captures_test.csv
 # =============================================================================
 
 import os
@@ -21,9 +29,14 @@ import librosa
 import tensorflow as tf
 
 # --- CHEMINS (relatifs au script) ---
-SCRIPT_DIR  = os.path.dirname(os.path.abspath(__file__))
-DATA_BASE   = os.path.join(SCRIPT_DIR, 'dist', 'data')
-RECORDS_DIR = os.path.join(DATA_BASE, 'records')
+SCRIPT_DIR        = os.path.dirname(os.path.abspath(__file__))
+DATA_BASE         = os.path.join(SCRIPT_DIR, 'data')
+RECORDS_DIR       = os.path.join(DATA_BASE, 'records')       # captures TRAIN
+RECORDS_DIR_TEST  = os.path.join(DATA_BASE, 'records_test')  # captures TEST
+
+# Fichiers CSV de métadonnées disponibles
+CSV_TRAIN = os.path.join(DATA_BASE, 'metadata_captures_moteur.csv')
+CSV_TEST  = os.path.join(DATA_BASE, 'metadata_captures_test.csv')
 
 # --- HYPERPARAMÈTRES (DOIVENT être identiques à arch4_double_branche.py) ---
 IMG_SIZE         = (128, 128)
@@ -147,26 +160,98 @@ def trouver_modele():
     return None
 
 
+def resoudre_csv(valeur):
+    """
+    Traduit l'argument --csv en chemin absolu vers le fichier de métadonnées.
+
+    Valeurs acceptées :
+      'train'          → metadata_captures_moteur.csv  (données d'entraînement)
+      'test'           → metadata_captures_test.csv    (données de validation)
+      chemin quelconque → utilisé tel quel
+    """
+    if valeur is None or valeur.lower() == 'train':
+        return CSV_TRAIN
+    if valeur.lower() == 'test':
+        return CSV_TEST
+    # Chemin personnalisé fourni directement
+    return valeur
+
+
+def chercher_session_dans_csv(csv_path, session_id):
+    """
+    Cherche la ligne correspondant à session_id dans le CSV de métadonnées.
+    Retourne un dict avec les noms de fichiers et les métadonnées de la session,
+    ou None si l'ID n'existe pas dans le fichier.
+    """
+    import csv as csv_module
+    if not os.path.exists(csv_path):
+        raise FileNotFoundError(f"CSV introuvable : {csv_path}")
+
+    with open(csv_path, 'r', encoding='utf-8') as f:
+        reader = csv_module.DictReader(f)
+        for row in reader:
+            try:
+                if int(row['id_session']) == session_id:
+                    return row
+            except (ValueError, KeyError):
+                continue
+    return None
+
+
 # =============================================================================
 #  CLI
 # =============================================================================
 
 def main():
-    p = argparse.ArgumentParser(description="Prédit le niveau de tension moteur sur une capture réelle.")
-    p.add_argument('son', nargs='?', help="Fichier son CSV (ex: son_47.csv ou chemin complet)")
-    p.add_argument('vib', nargs='?', help="Fichier vibration CSV (ex: vib_47.csv)")
-    p.add_argument('--id', type=int, help="Numéro de capture : cherche son_<id>/vib_<id> dans le dataset")
+    p = argparse.ArgumentParser(
+        description="Prédit le niveau de tension moteur sur une capture réelle.",
+        formatter_class=argparse.RawTextHelpFormatter
+    )
+    p.add_argument('son', nargs='?', help="Fichier son CSV (ex: son_1.csv ou chemin complet)")
+    p.add_argument('vib', nargs='?', help="Fichier vibration CSV (ex: vib_1.csv)")
+    p.add_argument('--id',  type=int, help="Numéro de session à chercher dans le CSV de métadonnées")
+    p.add_argument('--csv', default='train',
+                   help=(
+                       "Fichier de métadonnées à utiliser avec --id :\n"
+                       "  'train' (défaut) → metadata_captures_moteur.csv\n"
+                       "  'test'           → metadata_captures_test.csv\n"
+                       "  chemin complet   → n'importe quel autre CSV"
+                   ))
     p.add_argument('--condition', choices=['A_vide', 'B_frein'], help="Condition de charge (pour estimer les volts)")
-    p.add_argument('--reel', type=float, help="Niveau de tension réel en %% (pour calculer l'erreur)")
-    p.add_argument('--duree', type=float, default=DUREE_DEFAUT, help="Durée à conserver (s), défaut 15")
+    p.add_argument('--reel',   type=float, help="Niveau de tension réel en %% (pour calculer l'erreur)")
+    p.add_argument('--duree',  type=float, default=DUREE_DEFAUT, help="Durée à conserver (s), défaut 15")
     p.add_argument('--modele', help="Chemin du modèle .keras (sinon recherche automatique)")
     args = p.parse_args()
 
-    # Résolution des chemins son/vib
+    # ------------------------------------------------------------------
+    #  Résolution des chemins son / vib
+    # ------------------------------------------------------------------
+    condition_csv = None  # condition lue depuis le CSV si disponible
+    niveau_reel_csv = None  # niveau de tension lu depuis le CSV
+
     if args.id is not None:
-        path_son = os.path.join(RECORDS_DIR, 'sons', f'son_{args.id}.csv')
-        path_vib = os.path.join(RECORDS_DIR, 'vibrations', f'vib_{args.id}.csv')
+        # Lecture des vrais noms de fichiers depuis le CSV de métadonnées
+        csv_path = resoudre_csv(args.csv)
+        print(f"CSV utilisé : {csv_path}")
+
+        session = chercher_session_dans_csv(csv_path, args.id)
+        if session is None:
+            print(f"ERREUR : session {args.id} introuvable dans {csv_path}")
+            sys.exit(1)
+
+        # Sélection du dossier records selon le mode (--csv test → records_test/)
+        base_records = RECORDS_DIR_TEST if (args.csv or '').lower() == 'test' else RECORDS_DIR
+        path_son = os.path.join(base_records, 'sons',       session['fichier_son'])
+        path_vib = os.path.join(base_records, 'vibrations', session['fichier_vibration'])
+
+        # Récupération des métadonnées de la session pour l'affichage
+        condition_csv   = session.get('condition_charge')
+        niveau_reel_csv = session.get('niveau_tension')
+        print(f"Session {args.id} : {session['fichier_son']} | {session['fichier_vibration']}"
+              f" | condition={condition_csv} | tension={niveau_reel_csv}%")
+
     elif args.son and args.vib:
+        # Chemins fournis directement — résolution relative au dossier records
         def resoudre(nom, sous_dossier):
             if os.path.exists(nom):
                 return nom
@@ -174,10 +259,13 @@ def main():
             return cand if os.path.exists(cand) else nom
         path_son = resoudre(args.son, 'sons')
         path_vib = resoudre(args.vib, 'vibrations')
-    else:
-        p.error("Fournis soit deux fichiers (son vib), soit --id <numero>.")
 
-    # Chargement du modèle
+    else:
+        p.error("Fournis soit deux fichiers (son vib), soit --id <numero> [--csv train|test].")
+
+    # ------------------------------------------------------------------
+    #  Chargement du modèle
+    # ------------------------------------------------------------------
     chemin_modele = args.modele or trouver_modele()
     if not chemin_modele or not os.path.exists(chemin_modele):
         print("ERREUR : modèle introuvable. Entraîne d'abord arch4 ou passe --modele <chemin>.")
@@ -186,21 +274,30 @@ def main():
     print(f"Modèle : {chemin_modele}")
     model = tf.keras.models.load_model(chemin_modele)
 
-    # Chargement capture + prédiction
+    # ------------------------------------------------------------------
+    #  Chargement de la capture + prédiction
+    # ------------------------------------------------------------------
     data_son, magnitude = charger_capture(path_son, path_vib, duree=args.duree)
     pred, n_fen, _ = predire(model, data_son, magnitude)
 
-    # Affichage
+    # ------------------------------------------------------------------
+    #  Affichage du résultat
+    # ------------------------------------------------------------------
+
+    # La condition et le niveau réel peuvent venir du CSV ou des arguments
+    condition   = args.condition or condition_csv
+    niveau_reel = args.reel or (float(niveau_reel_csv) if niveau_reel_csv else None)
+
     print("\n=== RÉSULTAT ===")
-    print(f"  Capture        : {os.path.basename(path_son)} + {os.path.basename(path_vib)}")
-    print(f"  Fenêtres son   : {n_fen}")
+    print(f"  Capture         : {os.path.basename(path_son)} + {os.path.basename(path_vib)}")
+    print(f"  Fenêtres son    : {n_fen}")
     print(f"  Tension prédite : {pred:.1f} %")
-    if args.condition:
-        vmax = VOLTAGE_MAX[args.condition]
-        print(f"  → soit ~{pred / 100.0 * vmax:.1f} V (condition {args.condition}, max {vmax} V)")
-    if args.reel is not None:
-        print(f"  Tension réelle  : {args.reel:.1f} %")
-        print(f"  Erreur absolue  : {abs(pred - args.reel):.1f} points")
+    if condition and condition in VOLTAGE_MAX:
+        vmax = VOLTAGE_MAX[condition]
+        print(f"  → soit ~{pred / 100.0 * vmax:.1f} V  (condition {condition}, max {vmax} V)")
+    if niveau_reel is not None:
+        print(f"  Tension réelle  : {niveau_reel:.1f} %")
+        print(f"  Erreur absolue  : {abs(pred - niveau_reel):.1f} points")
 
 
 if __name__ == "__main__":

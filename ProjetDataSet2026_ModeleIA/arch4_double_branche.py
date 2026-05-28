@@ -33,33 +33,122 @@ DATA_BASE   = os.path.join(SCRIPT_DIR, 'dist', 'data')
 CSV_PATH    = os.path.join(DATA_BASE, 'metadata_captures_moteur.csv')
 RECORDS_DIR = os.path.join(DATA_BASE, 'records')
 
-# --- HYPERPARAMÈTRES SIGNAL / MEL ---
-IMG_SIZE        = (128, 128)
-SEUIL_ECART     = 0.05      # 5 % d'écart max entre fréquence déclarée et effective avant warning
+# =============================================================================
+#  HYPERPARAMÈTRES — SIGNAL / MEL
+# =============================================================================
 
-# Mel vibration (signal basse-fréquence : 50 Hz × 15 s = 750 pts en théorie)
-VIB_N_FFT       = 128
-VIB_HOP         = 32
-VIB_N_MELS      = 32
+# Taille finale de chaque spectrogramme donné au CNN (hauteur × largeur en pixels).
+# Une image plus grande préserve plus de détails mais augmente la mémoire
+# et le temps d'entraînement. Doit être un multiple de 2 (ex: 64, 128, 256).
+IMG_SIZE = (128, 128)
 
-# Mel son (16 kHz)
-SON_N_MELS      = 64
+# Écart relatif max toléré entre la fréquence déclarée dans le CSV et la fréquence
+# effective calculée depuis le nombre de samples / durée.
+# Au-delà de ce seuil un warning s'affiche pour signaler une erreur de saisie.
+# Ex: 0.05 = un avertissement si l'écart dépasse 5 %.
+SEUIL_ECART = 0.05
 
-# --- HYPERPARAMÈTRES WINDOW SLICING / AUGMENTATION ---
-WINDOW_DUREE_SON     = 1.0   # secondes par fenêtre son
-WINDOW_OVERLAP       = 0.5   # 50 % de recouvrement
-N_AUGMENT_TRAIN      = 2     # copies augmentées par segment de train (en plus de la copie originale)
-NOISE_SNR_DB         = 25
-TIME_SHIFT_PCT       = 0.10
-SPECAUG_TIME_FRAC    = 0.10
-SPECAUG_FREQ_FRAC    = 0.10
-SPECAUG_N_MASKS      = 2
+# --- Mel vibration (signal basse-fréquence : sr = 50 Hz) ---
 
-# --- HYPERPARAMÈTRES ENTRAÎNEMENT ---
-TEST_RATIO    = 0.2
-EPOCHS        = 60
-BATCH_SIZE    = 32
-SEED          = 42
+# Taille de la fenêtre FFT pour la vibration.
+# À 50 Hz, la fréquence max analysable est 25 Hz (Nyquist).
+# → Plus VIB_N_FFT est grand : meilleure résolution fréquentielle (Hz/bin).
+# → Ne pas dépasser 128–256 avec sr=50 Hz (au-delà les bins sont vides).
+# Résolution actuelle : 50 / 128 ≈ 0.4 Hz/bin.
+# Valeurs conseillées : 64 (grossier), 128 (standard), 256 (fin)
+VIB_N_FFT  = 128
+
+# Décalage entre deux fenêtres FFT consécutives pour la vibration.
+# → Plus VIB_HOP est petit : plus de frames dans le spectrogramme (image plus large).
+# → Règle habituelle : VIB_HOP = VIB_N_FFT / 4
+# Valeurs conseillées : 16 (détaillé), 32 (standard), 64 (rapide)
+VIB_HOP    = 32
+
+# Nombre de bandes de fréquence Mel pour la vibration.
+# Avec sr=50 Hz on ne couvre que 0–25 Hz → peu de bandes utiles.
+# Valeurs conseillées : 16 (compact), 32 (standard)
+VIB_N_MELS = 32
+
+# --- Mel son (sr = 16 000 Hz) ---
+
+# Nombre de bandes de fréquence Mel pour le son.
+# → Plus il y en a : image plus haute, plus de détails fréquentiels visibles.
+# Valeurs conseillées : 32 (rapide), 64 (standard), 128 (détaillé)
+SON_N_MELS = 64
+
+# =============================================================================
+#  HYPERPARAMÈTRES — WINDOW SLICING & AUGMENTATION
+# =============================================================================
+
+# Durée de chaque fenêtre de découpage du signal son (en secondes).
+# → Plus courte : plus de segments générés par capture (plus de données),
+#   mais chaque segment contient moins d'information.
+# → Plus longue : moins de segments, mais chaque image est plus riche.
+# Valeurs conseillées : 0.5 s (beaucoup de segments), 1.0 s (standard), 2.0 s (peu de segments)
+WINDOW_DUREE_SON = 1.0
+
+# Fraction de recouvrement entre deux fenêtres consécutives (0.0 à <1.0).
+# → 0.5 = chaque fenêtre partage 50 % de son contenu avec la suivante.
+# → Plus le recouvrement est grand : plus de segments générés.
+# → 0.0 = fenêtres sans recouvrement (moins de données mais plus indépendantes).
+# Valeurs conseillées : 0.0 (indépendant), 0.5 (standard), 0.75 (beaucoup de segments)
+WINDOW_OVERLAP = 0.5
+
+# Nombre de copies augmentées créées par segment d'entraînement.
+# → 2 = chaque segment original génère 2 copies supplémentaires → ×3 de données au total.
+# → Augmenter si le dataset est très petit. Réduire si l'entraînement est trop long.
+# Valeurs conseillées : 1 (modéré), 2 (standard), 4 (agressif)
+N_AUGMENT_TRAIN = 2
+
+# Rapport signal/bruit cible pour l'augmentation par bruit gaussien (en dB).
+# → Plus SNR est bas : plus de bruit ajouté → apprentissage plus robuste aux bruits de mesure.
+# → Trop bas (< 10 dB) : le signal est noyé dans le bruit, le modèle ne peut plus apprendre.
+# Valeurs conseillées : 30 dB (léger), 25 dB (standard), 15 dB (fort)
+NOISE_SNR_DB = 25
+
+# Fraction max du signal décalée lors du time shift (décalage temporel circulaire).
+# → 0.10 = le signal peut être décalé de ±10 % de sa longueur.
+# → Rend le modèle insensible au moment précis du début de capture.
+# Valeurs conseillées : 0.05 (léger), 0.10 (standard), 0.20 (fort)
+TIME_SHIFT_PCT = 0.10
+
+# SpecAugment : fraction de colonnes (temps) masquées à zéro sur le spectrogramme.
+# → Oblige le modèle à ne pas trop dépendre d'un instant particulier.
+# Valeurs conseillées : 0.05 (léger), 0.10 (standard), 0.20 (fort)
+SPECAUG_TIME_FRAC = 0.10
+
+# SpecAugment : fraction de lignes (fréquences) masquées à zéro sur le spectrogramme.
+# → Oblige le modèle à ne pas trop dépendre d'une fréquence particulière.
+# Valeurs conseillées : 0.05 (léger), 0.10 (standard), 0.20 (fort)
+SPECAUG_FREQ_FRAC = 0.10
+
+# Nombre de masques appliqués (temporels + fréquentiels) par image augmentée.
+# → Plus il y en a : augmentation plus agressive.
+# Valeurs conseillées : 1 (léger), 2 (standard), 3 (fort)
+SPECAUG_N_MASKS = 2
+
+# =============================================================================
+#  HYPERPARAMÈTRES — ENTRAÎNEMENT
+# =============================================================================
+
+# Proportion des captures réservée à l'évaluation finale (pas à l'entraînement).
+# → 0.2 = 20 % des captures en test, 80 % en train.
+# → Avec peu de captures (< 10), réduire à 0.1 pour garder plus de données en train.
+TEST_RATIO = 0.2
+
+# Nombre maximum d'époques (passages complets sur les données d'entraînement).
+# L'EarlyStopping arrêtera avant si le modèle converge.
+# Augmenter si l'entraînement est encore en cours quand il s'arrête.
+EPOCHS = 60
+
+# Nombre de segments traités simultanément avant chaque mise à jour des poids.
+# → Petit (8–16) : plus stable avec peu de données, mais entraînement plus lent.
+# → Grand (32–64) : plus rapide, mais moins précis avec peu de données.
+BATCH_SIZE = 32
+
+# Graine aléatoire pour la reproductibilité (split, initialisation, augmentation).
+# Changer cette valeur pour tester différentes répartitions train/test.
+SEED = 42
 
 np.random.seed(SEED)
 tf.random.set_seed(SEED)
@@ -268,37 +357,76 @@ def construire_segments(sessions, augmenter=False):
 # =============================================================================
 
 def construire_modele():
+    # --- BRANCHE SON ---
     entree_son = layers.Input(shape=(IMG_SIZE[0], IMG_SIZE[1], 1), name="entree_son")
+
+    # Bloc 1 — Détection des motifs de base (harmoniques simples, bordures)
+    # 32 : nombre de filtres. Plus il y en a, plus le réseau détecte de motifs différents.
+    # Doubler (→ 64) augmente la capacité mais aussi le temps de calcul.
+    # (3, 3) : taille du filtre. 3×3 est standard. 5×5 capte des motifs plus larges.
     x1 = layers.Conv2D(32, (3, 3), activation='relu', padding='same')(entree_son)
     x1 = layers.BatchNormalization()(x1)
+    # Réduit l'image par 2 → rend le modèle insensible aux petits décalages.
     x1 = layers.MaxPooling2D((2, 2))(x1)
+
+    # Bloc 2 — Détection de motifs plus complexes (combinaisons de fréquences)
     x1 = layers.Conv2D(64, (3, 3), activation='relu', padding='same')(x1)
     x1 = layers.BatchNormalization()(x1)
     x1 = layers.MaxPooling2D((2, 2))(x1)
+
+    # Bloc 3 — Motifs très abstraits liés au niveau de tension
+    # 128 : niveau d'abstraction maximal. Augmenter à 256 pour plus de capacité
+    # (nécessite plus de données pour éviter l'overfitting).
     x1 = layers.Conv2D(128, (3, 3), activation='relu', padding='same')(x1)
     x1 = layers.BatchNormalization()(x1)
+    # Remplace Flatten : calcule la moyenne de chaque carte de features.
+    # Produit un vecteur compact de 128 valeurs résumant le spectrogramme son.
     x1 = layers.GlobalAveragePooling2D(name="features_son")(x1)
 
+    # --- BRANCHE VIBRATION ---
+    # Structure identique à la branche son, poids indépendants :
+    # chaque branche apprend ses propres filtres adaptés à son type de signal.
     entree_vib = layers.Input(shape=(IMG_SIZE[0], IMG_SIZE[1], 1), name="entree_vibration")
+
+    # Bloc 1 vibration
     x2 = layers.Conv2D(32, (3, 3), activation='relu', padding='same')(entree_vib)
     x2 = layers.BatchNormalization()(x2)
     x2 = layers.MaxPooling2D((2, 2))(x2)
+
+    # Bloc 2 vibration
     x2 = layers.Conv2D(64, (3, 3), activation='relu', padding='same')(x2)
     x2 = layers.BatchNormalization()(x2)
     x2 = layers.MaxPooling2D((2, 2))(x2)
+
+    # Bloc 3 vibration — produit un vecteur compact de 128 valeurs
     x2 = layers.Conv2D(128, (3, 3), activation='relu', padding='same')(x2)
     x2 = layers.BatchNormalization()(x2)
     x2 = layers.GlobalAveragePooling2D(name="features_vibration")(x2)
 
+    # --- FUSION ---
+    # Concatène les deux vecteurs → 256 valeurs (128 son + 128 vib).
     fusion = layers.Concatenate(name="fusion_son_vibration")([x1, x2])
+
+    # Couche de décision : 64 neurones analysent la combinaison son + vibration.
+    # Augmenter à 128 ou 256 si le modèle n'arrive pas à trouver la bonne règle.
     z = layers.Dense(64, activation='relu')(fusion)
+
+    # Dropout : désactive aléatoirement X % des neurones pendant l'entraînement.
+    # → Empêche le modèle de mémoriser les données au lieu d'apprendre des règles générales.
+    # → Augmenter (→ 0.5) si val_loss remonte alors que train_loss continue de descendre.
+    # → Réduire (→ 0.1) si le modèle apprend trop lentement.
     z = layers.Dropout(0.3)(z)
+
+    # Sortie sigmoïde : contraint la prédiction entre 0 et 1 (tension normalisée).
+    # Cohérent avec les labels normalisés niveau_tension / 100.
     sortie = layers.Dense(1, activation='sigmoid', name="tension")(z)
 
     model = models.Model(
         inputs=[entree_son, entree_vib], outputs=sortie,
         name="arch4_double_branche"
     )
+    # optimizer='adam' : algorithme standard. Remplacer par Adam(learning_rate=0.0005)
+    # pour un réglage plus fin si le modèle oscille en fin d'entraînement.
     model.compile(optimizer='adam', loss='mse', metrics=['mae'])
     return model
 
@@ -343,8 +471,23 @@ else:
     model.summary()
 
     callbacks = [
+        # Arrête l'entraînement si val_loss ne s'améliore pas pendant N époques.
+        # patience=8 : on attend 8 époques sans progrès avant d'arrêter.
+        #   → Augmenter (→ 12) si le modèle a besoin de temps pour sortir d'un plateau.
+        #   → Réduire (→ 5) pour un arrêt plus rapide et économiser du temps.
+        # restore_best_weights : recharge les poids de la meilleure époque à la fin.
         EarlyStopping(patience=8, restore_best_weights=True, monitor='val_loss'),
+
+        # Divise le learning rate par `factor` si val_loss stagne pendant `patience` époques.
+        # → Permet de "zoomer" sur le minimum quand le modèle ne progresse plus.
+        # patience=4 : réduit le LR après 4 époques sans amélioration.
+        # factor=0.5 : divise le LR par 2 à chaque déclenchement (ex: 0.001 → 0.0005).
+        # min_lr=1e-6 : plancher en dessous duquel le LR ne descend plus.
         ReduceLROnPlateau(patience=4, factor=0.5, monitor='val_loss', min_lr=1e-6),
+
+        # Sauvegarde automatiquement le modèle à chaque fois que val_loss s'améliore.
+        # → Garantit de conserver le meilleur modèle même si l'entraînement plante.
+        # save_best_only=True : n'écrase le fichier que si c'est une amélioration.
         ModelCheckpoint('modele_arch4_best.keras', save_best_only=True, monitor='val_loss'),
     ]
 

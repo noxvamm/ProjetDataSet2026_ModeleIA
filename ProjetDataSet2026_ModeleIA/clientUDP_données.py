@@ -30,12 +30,19 @@ PORT_UDP = 9091         # Port UDP utilisé par l'ESP32 pour envoyer ses donnée
 
 # Dossiers de sortie des fichiers CSV
 DATA_DIR  = 'data/'
-VIB_DIR   = os.path.join(DATA_DIR, 'records/vibrations/')
-SON_DIR   = os.path.join(DATA_DIR, 'records/sons/')
 
-# Fichier de métadonnées écrit par serveurTCP_metadonnes.py
-# C'est ici que l'on récupère l'ID de la session en cours
-METADATA_FILE = os.path.join(DATA_DIR, 'metadata_captures_moteur.csv')
+# Dossiers TRAIN (captures d'entraînement)
+VIB_DIR      = os.path.join(DATA_DIR, 'records/vibrations/')
+SON_DIR      = os.path.join(DATA_DIR, 'records/sons/')
+
+# Dossiers TEST (captures de validation du modèle)
+VIB_DIR_TEST = os.path.join(DATA_DIR, 'records_test/vibrations/')
+SON_DIR_TEST = os.path.join(DATA_DIR, 'records_test/sons/')
+
+# Fichier d'état écrit par serveurTCP_metadonnes_moteur.py après chaque session.
+# Contient "id_session,mode" (ex: "3,TEST"). Permet de savoir dans quel dossier
+# écrire les fichiers son/vibration et quel ID de session utiliser.
+SESSION_STATE_FILE = os.path.join(DATA_DIR, 'current_session.txt')
 
 # Durée d'inactivité (en secondes) avant de considérer la capture terminée
 TIMEOUT_PRESENCE = 3.0
@@ -53,7 +60,7 @@ UDP_RCVBUF_SIZE = 8 * 1024 * 1024
 VIB_FIELDS_EXPECTED = 15
 
 # Création automatique des dossiers de données s'ils n'existent pas encore
-for d in [VIB_DIR, SON_DIR]:
+for d in [VIB_DIR, SON_DIR, VIB_DIR_TEST, SON_DIR_TEST]:
     if not os.path.exists(d):
         os.makedirs(d)
 
@@ -64,37 +71,39 @@ for d in [VIB_DIR, SON_DIR]:
 
 def get_current_session_id():
     """
-    Lit le fichier de métadonnées CSV et retourne l'ID de la dernière session
-    enregistrée par serveurTCP_metadonnes.py.
+    Lit le fichier d'état écrit par serveurTCP_metadonnes_moteur.py et retourne
+    l'ID de session ainsi que le mode (TRAIN ou TEST).
 
-    Principe :
-      - La dernière ligne du CSV correspond à la session la plus récente.
-      - La colonne 0 (id_session) contient son numéro.
+    Format du fichier : une ligne "id_session,mode"  (ex: "3,TEST")
 
-    Retourne "0" si :
+    Retourne ("0", "TRAIN") si :
       - Le fichier n'existe pas encore (serveur TCP non démarré)
-      - Le fichier ne contient que le header (aucune session enregistrée)
+      - Le fichier est vide ou mal formé
       - Une erreur de lecture inattendue survient
     """
     try:
-        with open(METADATA_FILE, 'r', encoding='utf-8') as f:
-            # On filtre les lignes vides qui peuvent apparaître en fin de fichier
-            lines = [l for l in csv.reader(f) if l]
+        with open(SESSION_STATE_FILE, 'r', encoding='utf-8') as f:
+            ligne = f.readline().strip()
 
-        if len(lines) > 1:
-            # lines[0] = header, lines[-1] = dernière session → colonne 0 = id
-            return lines[-1][0].strip()
+        if ',' in ligne:
+            session_id, mode = ligne.split(',', 1)
+            mode = mode.strip().upper()
+            if mode not in ('TRAIN', 'TEST'):
+                mode = 'TRAIN'
+            return session_id.strip(), mode
 
-        print(f"  [!] {METADATA_FILE} ne contient que le header — session_id forcé à '0'.")
-        return "0"
+        # Ligne sans virgule → ancien format ou fichier corrompu
+        print(f"  [!] {SESSION_STATE_FILE} : format inattendu ('{ligne}') — mode TRAIN par défaut.")
+        return ligne.strip() or "0", "TRAIN"
 
     except FileNotFoundError:
-        print(f"  [!] Fichier introuvable : {METADATA_FILE} — vérif du CWD ? (session_id = '0')")
-        return "0"
+        print(f"  [!] Fichier d'état introuvable : {SESSION_STATE_FILE} — "
+              f"serveur TCP non démarré ? (session_id = '0', mode = TRAIN)")
+        return "0", "TRAIN"
 
     except Exception as e:
-        print(f"  [!] Lecture metadata échouée ({type(e).__name__}: {e}) — session_id = '0'.")
-        return "0"
+        print(f"  [!] Lecture état échouée ({type(e).__name__}: {e}) — session_id = '0', mode = TRAIN.")
+        return "0", "TRAIN"
 
 
 # =============================================================================
@@ -128,6 +137,7 @@ with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
     compteur_vib        = 0       # Nombre de lignes vibration écrites
     compteur_corrompus  = 0       # Nombre de trames rejetées (format invalide)
     session_id          = "0"     # ID de la session en cours
+    session_mode        = "TRAIN" # Mode de la session (TRAIN ou TEST)
     derniere_session_id = None    # ID de la session précédente (détection doublon)
 
     try:
@@ -144,7 +154,11 @@ with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
                 # On initialise les compteurs et on récupère l'ID de session
                 # uniquement sur le premier paquet reçu après un silence
                 if not client_actif:
-                    session_id = get_current_session_id()
+                    session_id, session_mode = get_current_session_id()
+
+                    # Sélection des dossiers de sortie selon le mode TRAIN / TEST
+                    son_dir_actif = SON_DIR_TEST if session_mode == 'TEST' else SON_DIR
+                    vib_dir_actif = VIB_DIR_TEST if session_mode == 'TEST' else VIB_DIR
 
                     # Avertissement si les métadonnées TCP n'ont pas encore été envoyées
                     if session_id == "0":
@@ -153,15 +167,14 @@ with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
                               f"son_0.csv / vib_0.csv vont être pollués.")
 
                     # Avertissement si l'ID n'a pas changé depuis la capture précédente
-                    # (l'opérateur a oublié d'envoyer les métadonnées TCP avant de lancer)
                     elif session_id == derniere_session_id:
                         print(f"  [!!] session_id identique à la capture précédente ({session_id}) — "
                               f"l'IHM n'a pas envoyé de nouvelles métadonnées TCP avant cette capture. "
-                              f"Les nouveaux échantillons vont s'APPEND à son_{session_id}.csv / "
-                              f"vib_{session_id}.csv.")
+                              f"Les nouveaux échantillons vont s'APPEND aux fichiers existants.")
 
                     derniere_session_id = session_id
-                    print(f"\n[DÉBUT] Capture démarrée — Session {session_id} (depuis {addr[0]})")
+                    print(f"\n[DÉBUT] Capture démarrée — Session {session_id} [{session_mode}] (depuis {addr[0]})")
+                    print(f"        Dossier son : {son_dir_actif}")
                     client_actif     = True
                     compteur_paquets = 0
                     compteur_son     = 0
@@ -200,7 +213,7 @@ with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
                     n          = len(amplitudes)
                     dt_ms      = 1000.0 / SAMPLE_RATE_SON  # Intervalle entre deux samples (ms)
 
-                    file_path = f"{SON_DIR}son_{session_id}.csv"
+                    file_path = f"{son_dir_actif}son_{session_id}.csv"
 
                     # Création du fichier avec son header si c'est la première écriture
                     if not os.path.exists(file_path):
@@ -238,7 +251,7 @@ with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
                         compteur_corrompus += 1
                         continue
 
-                    file_path = f"{VIB_DIR}vib_{session_id}.csv"
+                    file_path = f"{vib_dir_actif}vib_{session_id}.csv"
 
                     # Création du fichier avec son header si c'est la première écriture
                     if not os.path.exists(file_path):
@@ -283,8 +296,8 @@ with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
                 print(f"       Son               : {compteur_son} échantillons")
                 print(f"       Vibration         : {compteur_vib} lignes")
                 print(f"       Corrompus/rejetés : {compteur_corrompus}")
-                print(f"       Fichiers          : {SON_DIR}son_{session_id}.csv "
-                      f"| {VIB_DIR}vib_{session_id}.csv")
+                print(f"       Fichiers          : {son_dir_actif}son_{session_id}.csv "
+                      f"| {vib_dir_actif}vib_{session_id}.csv")
 
                 # Estimation de la fréquence son effective
                 # (chaque paquet SOUND contient ~128 samples → ~130 paquets/s attendus)

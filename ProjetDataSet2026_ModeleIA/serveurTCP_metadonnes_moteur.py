@@ -3,55 +3,91 @@ import csv
 import os
 from datetime import datetime
 
-# Configuration de base du serveur 
-HOST = '0.0.0.0'
+# =============================================================================
+#  Serveur TCP — Indexation des métadonnées de capture (maquette moteur)
+#
+#  Deux destinations possibles pour chaque capture :
+#
+#    TRAIN → metadata_captures_moteur.csv  /  son_X.csv       / vib_X.csv
+#    TEST  → metadata_captures_test.csv    /  son_test_X.csv  / vib_test_X.csv
+#
+#  À chaque nouvelle capture reçue, le serveur demande à l'opérateur
+#  sur la console : "TRAIN ou TEST ?"
+#  La dernière réponse est mémorisée comme valeur par défaut.
+# =============================================================================
+
+# --- CONFIGURATION ---
+HOST     = '0.0.0.0'
 PORT_APP = 9090
-METADATA_FILE = 'data/metadata_captures_moteur.csv'
 
-def init_metadata():
-    os.makedirs(os.path.dirname(METADATA_FILE), exist_ok=True) # Crée le header du fichier de métadonnées s'il n'existe pas déjà
-    if not os.path.exists(METADATA_FILE):
-        header = [
-            'id_session', 'time_session',
-            'condition_charge',
-            'duree', 'frequence_son', 'frequence_vibration',
-            'fichier_son', 'fichier_vibration',
-            'niveau_tension'
-        ]
-        with open(METADATA_FILE, 'w', newline='', encoding='utf-8') as f:
-            csv.writer(f).writerow(header)
+METADATA_FILE_TRAIN = 'data/metadata_captures_moteur.csv'
+METADATA_FILE_TEST  = 'data/metadata_captures_test.csv'
 
+# Fichier d'état écrit après chaque session pour indiquer au client UDP
+# quel dossier utiliser (records/ ou records_test/) et quel ID de session
+SESSION_STATE_FILE  = 'data/current_session.txt'
 
-# Mapping des conditions de charge possibles vers des catégories canoniques (A_vide ou B_frein).
+CSV_HEADER = [
+    'id_session', 'time_session',
+    'condition_charge',
+    'duree', 'frequence_son', 'frequence_vibration',
+    'fichier_son', 'fichier_vibration',
+    'niveau_tension'
+]
+
+# Mapping des conditions de charge vers des catégories canoniques
 CONDITION_MAP = {
-    'aucune':    'A_vide',
-    'a_vide':    'A_vide',
-    'sans':      'A_vide',
-    'sans frein':'A_vide',
-    'a vide':    'A_vide',
-    'avec':      'B_frein',
-    'avec frein':'B_frein',
-    'frein':     'B_frein',
-    'b_frein':   'B_frein',
+    'aucune':     'A_vide',
+    'a_vide':     'A_vide',
+    'sans':       'A_vide',
+    'sans frein': 'A_vide',
+    'a vide':     'A_vide',
+    'avec':       'B_frein',
+    'avec frein': 'B_frein',
+    'frein':      'B_frein',
+    'b_frein':    'B_frein',
 }
 
 
-def normaliser_condition(valeur_brute):
-    cle = valeur_brute.strip().lower() # Convertit le libellé envoyé par l'IHM en condition canonique.
-    return CONDITION_MAP.get(cle, valeur_brute.strip())
+# =============================================================================
+#  FONCTIONS UTILITAIRES
+# =============================================================================
 
-# Cette fonction lit le fichier de métadonnées pour déterminer le prochain ID de session à utiliser en fonction du nombre de lignes existantes.
-def get_next_id():
+def init_metadata(fichier):
+    """Crée le fichier CSV avec son header s'il n'existe pas encore."""
+    os.makedirs(os.path.dirname(fichier), exist_ok=True)
+    if not os.path.exists(fichier):
+        with open(fichier, 'w', newline='', encoding='utf-8') as f:
+            csv.writer(f).writerow(CSV_HEADER)
+        print(f"  Fichier créé : {fichier}")
+
+
+def get_next_id(fichier):
+    """
+    Lit l'ID de la dernière session dans le CSV et retourne ID+1.
+    Chaque fichier (train / test) a son propre compteur indépendant.
+    """
     try:
-        with open(METADATA_FILE, 'r', encoding='utf-8') as f:
-            return sum(1 for line in f)
-    except FileNotFoundError:
+        with open(fichier, 'r', encoding='utf-8') as f:
+            lignes = list(csv.reader(f))
+        if len(lignes) <= 1:
+            return 1
+        dernier_id = int(lignes[-1][0])
+        return dernier_id + 1
+    except (FileNotFoundError, ValueError, IndexError):
         return 1
 
-# Lit le stream TCP jusqu'a la fin de la transmission (indiquée par une fermeture de connexion) ou jusqu'à un timeout pour éviter de bloquer indéfiniment.
+
+def normaliser_condition(valeur_brute):
+    """Convertit le libellé brut de l'IHM en condition canonique."""
+    cle = valeur_brute.strip().lower()
+    return CONDITION_MAP.get(cle, valeur_brute.strip())
+
+
 def read_all(conn):
+    """Lit tout le stream TCP jusqu'à fermeture de connexion ou timeout."""
     buffer = b""
-    conn.settimeout(2.0)  # Au cas où la fermeture tarde
+    conn.settimeout(2.0)
     try:
         while True:
             chunk = conn.recv(1024)
@@ -62,12 +98,51 @@ def read_all(conn):
         pass
     return buffer.decode('utf-8')
 
-init_metadata()
-print(f"Serveur d'indexation prêt (Port {PORT_APP})...")
+
+def demander_mode(dernier_mode):
+    """
+    Demande à l'opérateur sur la console si la capture va en TRAIN ou TEST.
+    Affiche le dernier mode utilisé comme valeur par défaut (appui Entrée = même mode).
+    Boucle jusqu'à recevoir une réponse valide.
+    """
+    while True:
+        reponse = input(f"\n  → Destination ? [TRAIN / TEST]  (défaut : {dernier_mode}) : ").strip().upper()
+
+        if reponse == '':
+            # Entrée vide = on garde le dernier mode
+            return dernier_mode
+        if reponse in ('TRAIN', 'TEST'):
+            return reponse
+
+        print("  [!] Réponse invalide. Tapez TRAIN ou TEST (ou Entrée pour garder le mode actuel).")
+
+
+# =============================================================================
+#  INITIALISATION
+# =============================================================================
+
+init_metadata(METADATA_FILE_TRAIN)
+init_metadata(METADATA_FILE_TEST)
+os.makedirs(os.path.dirname(SESSION_STATE_FILE), exist_ok=True)
+
+print("=" * 60)
+print(f"  Serveur d'indexation prêt  —  Port {PORT_APP}")
+print(f"  TRAIN → {METADATA_FILE_TRAIN}")
+print(f"  TEST  → {METADATA_FILE_TEST}")
+print("=" * 60)
+
+# Mémorise le dernier mode choisi pour le proposer par défaut au prochain coup
+dernier_mode = 'TRAIN'
+
+
+# =============================================================================
+#  BOUCLE PRINCIPALE
+# =============================================================================
 
 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
     s.bind((HOST, PORT_APP))
     s.listen()
+    print("\nEn attente d'une connexion IHM...\n")
 
     while True:
         conn, addr = s.accept()
@@ -76,41 +151,78 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             if not raw:
                 continue
 
-            # On filtre les lignes vides et le marqueur START
+            # Filtre les lignes vides et le marqueur START
             lignes = [l.strip() for l in raw.splitlines() if l.strip() and l.strip() != "START"]
 
             if not lignes:
-                print(f"[!] Reçu depuis {addr[0]} : aucune ligne CSV utile")
+                print(f"[!] Reçu depuis {addr[0]} : aucune ligne utile")
                 continue
 
-            # La ligne CSV est la première ligne non-vide non-START
             data_line = lignes[0]
-            parts = data_line.split(',')
+            parts     = data_line.split(',')
 
+            # ------------------------------------------------------------------
+            #  ENREGISTREMENT D'UNE SESSION (5 champs attendus)
+            # ------------------------------------------------------------------
             if len(parts) == 5:
-                session_id = get_next_id()
-
-                nom_fichier_son = f"son_{session_id}.csv"
-                nom_fichier_vib = f"vib_{session_id}.csv"
-
                 condition = normaliser_condition(parts[0])
+
+                # Affichage du résumé de la capture reçue
+                print(f"┌─ Nouvelle capture reçue depuis {addr[0]}")
+                print(f"│  Condition : {condition}")
+                print(f"│  Durée     : {parts[1]} s")
+                print(f"│  Fréq. son : {parts[2]} Hz  |  Fréq. vib : {parts[3]} Hz")
+                print(f"│  Tension   : {parts[4]} %")
+
+                # Demande à l'opérateur sur la console
+                mode_choisi = demander_mode(dernier_mode)
+                dernier_mode = mode_choisi
+
+                # Sélection du fichier CSV et du préfixe selon le mode
+                if mode_choisi == 'TEST':
+                    fichier_csv = METADATA_FILE_TEST
+                    prefixe     = 'test_'
+                else:
+                    fichier_csv = METADATA_FILE_TRAIN
+                    prefixe     = ''
+
+                session_id      = get_next_id(fichier_csv)
+                nom_fichier_son = f"son_{prefixe}{session_id}.csv"
+                nom_fichier_vib = f"vib_{prefixe}{session_id}.csv"
 
                 nouvelle_ligne = [
                     session_id,
                     datetime.now().strftime("%Y-%m-%d_%H:%M"),
-                    condition,      # condition_charge (A_vide / B_frein)
-                    parts[1],       # duree
-                    parts[2],       # frequence_son
-                    parts[3],       # frequence_vibration
-                    nom_fichier_son, # chemin des fichiers sons
-                    nom_fichier_vib, # chemin des fichiers vibrations
-                    parts[4]        # niveau_tension
+                    condition,
+                    parts[1],           # duree
+                    parts[2],           # frequence_son
+                    parts[3],           # frequence_vibration
+                    nom_fichier_son,
+                    nom_fichier_vib,
+                    parts[4]            # niveau_tension
                 ]
 
-                with open(METADATA_FILE, 'a', newline='', encoding='utf-8') as f:
+                with open(fichier_csv, 'a', newline='', encoding='utf-8') as f:
                     csv.writer(f).writerow(nouvelle_ligne)
 
-                print(f"Indexation réussie : Session {session_id} [{condition}]")
-                print(f" -> Liée aux fichiers : {nom_fichier_son} et {nom_fichier_vib}")
+                # Écriture du fichier d'état pour le client UDP
+                # Format : "id_session,mode"  (ex: "3,TEST" ou "5,TRAIN")
+                with open(SESSION_STATE_FILE, 'w', encoding='utf-8') as f:
+                    f.write(f"{session_id},{mode_choisi}\n")
+
+                print(f"└─ [{mode_choisi}] Session {session_id} indexée")
+                print(f"   Fichiers : {nom_fichier_son}  |  {nom_fichier_vib}")
+                print(f"   CSV      : {fichier_csv}\n")
+
+                # Réponse au client pour confirmation
+                try:
+                    conn.sendall(f"OK id={session_id} mode={mode_choisi}\n".encode('utf-8'))
+                except Exception:
+                    pass
+
             else:
-                print(f"[!] Erreur format : 5 valeurs attendues (condition,duree,fSon,fVib,niveau), reçu {len(parts)} — ligne = '{data_line}'")
+                print(f"[!] Format invalide : 5 valeurs attendues, reçu {len(parts)} — '{data_line}'")
+                try:
+                    conn.sendall(b"ERREUR: format invalide (condition,duree,fSon,fVib,niveau)\n")
+                except Exception:
+                    pass
