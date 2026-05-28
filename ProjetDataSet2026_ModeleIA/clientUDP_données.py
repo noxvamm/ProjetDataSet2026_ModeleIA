@@ -24,11 +24,6 @@ for d in [VIB_DIR, SON_DIR]:
         os.makedirs(d)
 
 def get_current_session_id():
-    """Récupère l'ID de la dernière session écrite par le serveur TCP dans5444
-    metadata_captures_moteur.csv. Renvoie '0' (avec log explicite) si
-    impossible — ce qui DOIT être traité comme une erreur côté opérateur :
-    cela signifie que la métadonnée TCP n'est pas arrivée avant les paquets UDP
-    (timing IHM) ou que le fichier n'est pas au bon endroit."""
     try:
         with open(METADATA_FILE, 'r', encoding='utf-8') as f:
             lines = [l for l in csv.reader(f) if l]

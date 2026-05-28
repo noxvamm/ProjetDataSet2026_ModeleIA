@@ -3,7 +3,7 @@ import csv
 import os
 from datetime import datetime
 
-# --- CONFIGURATION ---
+# Configuration de base du serveur 
 HOST = '0.0.0.0'
 PORT_APP = 9090
 METADATA_FILE = 'data/metadata_captures_moteur.csv'
