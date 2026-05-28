@@ -9,7 +9,7 @@ PORT_APP = 9090
 METADATA_FILE = 'data/metadata_captures_moteur.csv'
 
 def init_metadata():
-    os.makedirs(os.path.dirname(METADATA_FILE), exist_ok=True) #Crée le header du fichier de métadonnées s'il n'existe pas déjà
+    os.makedirs(os.path.dirname(METADATA_FILE), exist_ok=True) # Crée le header du fichier de métadonnées s'il n'existe pas déjà
     if not os.path.exists(METADATA_FILE):
         header = [
             'id_session', 'time_session',

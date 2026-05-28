@@ -21,11 +21,16 @@ def init_metadata():
             csv.writer(f).writerow(header)
 
 def get_next_id():
-    """Calcule l'ID en fonction du nombre de lignes existantes"""
+    """Récupère l'ID de la dernière ligne du CSV et retourne ID+1."""
     try:
         with open(METADATA_FILE, 'r', encoding='utf-8') as f:
-            return sum(1 for line in f)
-    except FileNotFoundError:
+            lignes = list(csv.reader(f))
+        # lignes[0] = header, lignes[1:] = données
+        if len(lignes) <= 1:
+            return 1  # fichier vide ou header seul → première session
+        dernier_id = int(lignes[-1][0])
+        return dernier_id + 1
+    except (FileNotFoundError, ValueError, IndexError):
         return 1
 
 def read_all(conn):
