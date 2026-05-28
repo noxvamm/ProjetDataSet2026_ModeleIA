@@ -24,7 +24,6 @@ def init_metadata():
 
 
 # Mapping des libellés de condition envoyés par l'IHM vers les valeurs canoniques
-# attendues par le modèle IA (cf. CLAUDE.md : A_vide / B_frein).
 CONDITION_MAP = {
     'aucune':    'A_vide',
     'a_vide':    'A_vide',
