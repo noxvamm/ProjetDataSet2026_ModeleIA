@@ -29,10 +29,10 @@ import librosa
 import tensorflow as tf
 
 # --- CHEMINS (relatifs au script) ---
-SCRIPT_DIR        = os.path.dirname(os.path.abspath(__file__))
-DATA_BASE         = os.path.join(SCRIPT_DIR, 'data')
-RECORDS_DIR       = os.path.join(DATA_BASE, 'records')       # captures TRAIN
-RECORDS_DIR_TEST  = os.path.join(DATA_BASE, 'records_test')  # captures TEST
+SCRIPT_DIR       = os.path.dirname(os.path.abspath(__file__))
+DATA_BASE        = os.path.join(SCRIPT_DIR, 'dist', 'data')
+RECORDS_DIR      = os.path.join(DATA_BASE, 'records')       # captures TRAIN
+RECORDS_DIR_TEST = os.path.join(DATA_BASE, 'records_test')  # captures TEST
 
 # Fichiers CSV de métadonnées disponibles
 CSV_TRAIN = os.path.join(DATA_BASE, 'metadata_captures_moteur.csv')
@@ -239,7 +239,9 @@ def main():
             print(f"ERREUR : session {args.id} introuvable dans {csv_path}")
             sys.exit(1)
 
-        # Sélection du dossier records selon le mode (--csv test → records_test/)
+        # Sélection du dossier selon le mode :
+        #   --csv test  → dist/data/records_test/
+        #   --csv train → dist/data/records/
         base_records = RECORDS_DIR_TEST if (args.csv or '').lower() == 'test' else RECORDS_DIR
         path_son = os.path.join(base_records, 'sons',       session['fichier_son'])
         path_vib = os.path.join(base_records, 'vibrations', session['fichier_vibration'])

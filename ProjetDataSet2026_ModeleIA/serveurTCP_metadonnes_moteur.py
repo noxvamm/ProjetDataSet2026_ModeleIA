@@ -178,17 +178,17 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 mode_choisi = demander_mode(dernier_mode)
                 dernier_mode = mode_choisi
 
-                # Sélection du fichier CSV et du préfixe selon le mode
+                # Sélection du fichier CSV selon le mode
+                # Les fichiers son/vib sont toujours nommés son_<id>.csv / vib_<id>.csv
+                # c'est le dossier (records/ ou records_test/) qui distingue TRAIN et TEST
                 if mode_choisi == 'TEST':
                     fichier_csv = METADATA_FILE_TEST
-                    prefixe     = 'test_'
                 else:
                     fichier_csv = METADATA_FILE_TRAIN
-                    prefixe     = ''
 
                 session_id      = get_next_id(fichier_csv)
-                nom_fichier_son = f"son_{prefixe}{session_id}.csv"
-                nom_fichier_vib = f"vib_{prefixe}{session_id}.csv"
+                nom_fichier_son = f"son_{session_id}.csv"
+                nom_fichier_vib = f"vib_{session_id}.csv"
 
                 nouvelle_ligne = [
                     session_id,
