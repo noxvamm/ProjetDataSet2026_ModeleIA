@@ -1,2 +1,15 @@
-cd "C:\Users\noaor\OneDrive\Bureau\Projet BTS 2026\ProjetDataSet2026_ModeleIA" : chemin vers programmes
-python -m PyInstaller --onefile serveurUDP_vibration.py
+Compilation des programmes Python en executables (PyInstaller)
+================================================================
+
+cd "C:\Users\noaor\OneDrive\Bureau\Projet BTS 2026\ProjetDataSet2026_ModeleIA\ProjetDataSet2026_ModeleIA"
+
+python -m PyInstaller --onefile serveurTCP_metadonnes_moteur.py
+python -m PyInstaller --onefile clientUDP_données.py
+
+Les executables sont produits dans dist\ :
+  dist\serveurTCP_metadonnes_moteur.exe
+  dist\clientUDP_données.exe
+
+Note : les .exe doivent etre lances depuis un dossier contenant data\
+(le serveur cree data\metadata_captures_moteur.csv, le client ecrit
+dans data\records\sons\ et data\records\vibrations\).

@@ -1,6 +1,6 @@
 # Modèles entraînés
 
-Liens symboliques vers les fichiers `.keras` produits par `arch4_double_branche.py`.
+Copies des fichiers `.keras` produits par `arch4_double_branche.py` (les originaux restent dans le dossier Visual Studio `ProjetDataSet2026_ModeleIA/`).
 
 - `modele_arch4_double_branche.keras` — modèle final entraîné (architecture double branche son + vibration).
 - `modele_arch4_best.keras` — meilleur checkpoint pendant l'entraînement (selon val_mae).

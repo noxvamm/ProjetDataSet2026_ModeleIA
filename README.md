@@ -78,4 +78,4 @@ python predire_tension.py --id 47 --condition A_vide
 
 ## Licence
 
-Projet pédagogique BTS CIEL — Lycée [à compléter], 2026. Utilisation libre dans un cadre éducatif, avec mention de l'équipe.
+Projet pédagogique BTS CIEL — session 2026. Utilisation libre dans un cadre éducatif, avec mention de l'équipe.
