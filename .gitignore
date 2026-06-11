@@ -383,3 +383,6 @@ memo_projet.md
 # Fichiers temporaires OneDrive
 *.tmp
 ~$*
+
+# Artefacts de compilation PyInstaller (regénérables via les .spec)
+build/
