@@ -29,6 +29,7 @@ colorama.init()
 
 # --- CHEMINS (relatifs au script pour ne plus dépendre du CWD) ---
 SCRIPT_DIR  = os.path.dirname(os.path.abspath(__file__))
+MODELS_DIR  = os.path.join(SCRIPT_DIR, '..', 'modeles')
 DATA_BASE   = os.path.join(SCRIPT_DIR, 'dist', 'data')
 CSV_PATH    = os.path.join(DATA_BASE, 'metadata_captures_moteur.csv')
 RECORDS_DIR = os.path.join(DATA_BASE, 'records')
@@ -157,6 +158,34 @@ tf.random.set_seed(SEED)
 # =============================================================================
 #  UTILS SIGNAL
 # =============================================================================
+
+def sauvegarder_hyperparametres(chemin_modele):
+    """Enregistre les hyperparamètres dans un .txt du même nom que le modèle."""
+    chemin_txt = chemin_modele.replace(".keras", ".txt")
+    with open(chemin_txt, "w", encoding="utf-8") as f:
+        f.write("=== HYPERPARAMÈTRES ===\n\n")
+        f.write("-- Signal / Mel --\n")
+        f.write(f"IMG_SIZE           = {IMG_SIZE}\n")
+        f.write(f"SON_N_MELS         = {SON_N_MELS}\n")
+        f.write(f"VIB_N_FFT          = {VIB_N_FFT}\n")
+        f.write(f"VIB_HOP            = {VIB_HOP}\n")
+        f.write(f"VIB_N_MELS         = {VIB_N_MELS}\n\n")
+        f.write("-- Window slicing & Augmentation --\n")
+        f.write(f"WINDOW_DUREE_SON   = {WINDOW_DUREE_SON}\n")
+        f.write(f"WINDOW_OVERLAP     = {WINDOW_OVERLAP}\n")
+        f.write(f"N_AUGMENT_TRAIN    = {N_AUGMENT_TRAIN}\n")
+        f.write(f"NOISE_SNR_DB       = {NOISE_SNR_DB}\n")
+        f.write(f"TIME_SHIFT_PCT     = {TIME_SHIFT_PCT}\n")
+        f.write(f"SPECAUG_TIME_FRAC  = {SPECAUG_TIME_FRAC}\n")
+        f.write(f"SPECAUG_FREQ_FRAC  = {SPECAUG_FREQ_FRAC}\n")
+        f.write(f"SPECAUG_N_MASKS    = {SPECAUG_N_MASKS}\n\n")
+        f.write("-- Entraînement --\n")
+        f.write(f"TEST_RATIO         = {TEST_RATIO}\n")
+        f.write(f"EPOCHS             = {EPOCHS}\n")
+        f.write(f"BATCH_SIZE         = {BATCH_SIZE}\n")
+        f.write(f"SEED               = {SEED}\n")
+    print(f"{Fore.CYAN}Hyperparamètres sauvegardés : {chemin_txt}{Style.RESET_ALL}")
+
 
 def normaliser(spectrogramme):
     """Normalise un spectrogramme dB entre 0 et 1."""
@@ -449,7 +478,9 @@ elif len(sessions) < 5:
     model = construire_modele()
     model.summary()
     history = model.fit([X_son, X_vib], y, epochs=EPOCHS, batch_size=BATCH_SIZE, verbose=1)
-    model.save("modele_arch4_smoke_test.keras")
+    chemin = os.path.join(MODELS_DIR, "modele_arch4_smoke_test.keras")
+    model.save(chemin)
+    sauvegarder_hyperparametres(chemin)
     print(f"{Fore.GREEN}Smoke test OK — pipeline fonctionnel.{Style.RESET_ALL}")
 else:
     # Split par capture (pas par segment !) pour éviter le data leakage
@@ -485,10 +516,6 @@ else:
         # min_lr=1e-6 : plancher en dessous duquel le LR ne descend plus.
         ReduceLROnPlateau(patience=4, factor=0.5, monitor='val_loss', min_lr=1e-6),
 
-        # Sauvegarde automatiquement le modèle à chaque fois que val_loss s'améliore.
-        # → Garantit de conserver le meilleur modèle même si l'entraînement plante.
-        # save_best_only=True : n'écrase le fichier que si c'est une amélioration.
-        ModelCheckpoint('modele_arch4_best.keras', save_best_only=True, monitor='val_loss'),
     ]
 
     print(f"\n{Fore.MAGENTA}=== Entraînement ==={Style.RESET_ALL}")
@@ -498,7 +525,9 @@ else:
         validation_data=([X_son_test, X_vib_test], y_test),
         callbacks=callbacks, verbose=1,
     )
-    model.save("modele_arch4_double_branche.keras")
+    chemin = os.path.join(MODELS_DIR, "modele_arch4_v3_baseline.keras")
+    model.save(chemin)
+    sauvegarder_hyperparametres(chemin)
     print(f"{Fore.GREEN}Modèle sauvegardé.{Style.RESET_ALL}")
 
     # ============ ÉVALUATION : segment + capture ============
@@ -534,5 +563,5 @@ else:
     axes[1].set_xlim(-5, 105); axes[1].set_ylim(-5, 105)
 
     plt.tight_layout()
-    plt.savefig("resultats_modele.png", dpi=120)
+    plt.savefig(os.path.join(MODELS_DIR, "resultats_modele_baseline.png"), dpi=120)
     plt.show()
