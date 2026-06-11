@@ -93,13 +93,13 @@ WINDOW_DUREE_SON = 1.0
 # → Plus le recouvrement est grand : plus de segments générés.
 # → 0.0 = fenêtres sans recouvrement (moins de données mais plus indépendantes).
 # Valeurs conseillées : 0.0 (indépendant), 0.5 (standard), 0.75 (beaucoup de segments)
-WINDOW_OVERLAP = 0.5
+WINDOW_OVERLAP = 0.75
 
 # Nombre de copies augmentées créées par segment d'entraînement.
 # → 2 = chaque segment original génère 2 copies supplémentaires → ×3 de données au total.
 # → Augmenter si le dataset est très petit. Réduire si l'entraînement est trop long.
 # Valeurs conseillées : 1 (modéré), 2 (standard), 4 (agressif)
-N_AUGMENT_TRAIN = 2
+N_AUGMENT_TRAIN = 4
 
 # Rapport signal/bruit cible pour l'augmentation par bruit gaussien (en dB).
 # → Plus SNR est bas : plus de bruit ajouté → apprentissage plus robuste aux bruits de mesure.
@@ -140,12 +140,12 @@ TEST_RATIO = 0.2
 # Nombre maximum d'époques (passages complets sur les données d'entraînement).
 # L'EarlyStopping arrêtera avant si le modèle converge.
 # Augmenter si l'entraînement est encore en cours quand il s'arrête.
-EPOCHS = 60
+EPOCHS = 80
 
 # Nombre de segments traités simultanément avant chaque mise à jour des poids.
 # → Petit (8–16) : plus stable avec peu de données, mais entraînement plus lent.
 # → Grand (32–64) : plus rapide, mais moins précis avec peu de données.
-BATCH_SIZE = 32
+BATCH_SIZE = 16
 
 # Graine aléatoire pour la reproductibilité (split, initialisation, augmentation).
 # Changer cette valeur pour tester différentes répartitions train/test.
@@ -525,7 +525,7 @@ else:
         validation_data=([X_son_test, X_vib_test], y_test),
         callbacks=callbacks, verbose=1,
     )
-    chemin = os.path.join(MODELS_DIR, "modele_arch4_v3_baseline.keras")
+    chemin = os.path.join(MODELS_DIR, "modele_arch4_v4_renforce.keras")
     model.save(chemin)
     sauvegarder_hyperparametres(chemin)
     print(f"{Fore.GREEN}Modèle sauvegardé.{Style.RESET_ALL}")
@@ -563,5 +563,5 @@ else:
     axes[1].set_xlim(-5, 105); axes[1].set_ylim(-5, 105)
 
     plt.tight_layout()
-    plt.savefig(os.path.join(MODELS_DIR, "resultats_modele_baseline.png"), dpi=120)
+    plt.savefig(os.path.join(MODELS_DIR, "resultats_modele_renforce.png"), dpi=120)
     plt.show()
