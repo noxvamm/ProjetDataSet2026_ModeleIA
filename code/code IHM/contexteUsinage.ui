@@ -1,0 +1,293 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>contexteUsinage</class>
+ <widget class="QWidget" name="contexteUsinage">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>800</width>
+    <height>600</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Deuxième page</string>
+  </property>
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item>
+    <widget class="QLabel" name="Titre2">
+     <property name="font">
+      <font>
+       <bold>true</bold>
+      </font>
+     </property>
+     <property name="text">
+      <string>Saisie du contexte d'usinage</string>
+     </property>
+     <property name="alignment">
+      <set>Qt::AlignmentFlag::AlignCenter</set>
+     </property>
+     <property name="margin">
+      <number>20</number>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <layout class="QFormLayout" name="formLayout">
+     <property name="labelAlignment">
+      <set>Qt::AlignmentFlag::AlignLeading|Qt::AlignmentFlag::AlignLeft|Qt::AlignmentFlag::AlignVCenter</set>
+     </property>
+     <property name="horizontalSpacing">
+      <number>20</number>
+     </property>
+     <property name="verticalSpacing">
+      <number>15</number>
+     </property>
+     <property name="leftMargin">
+      <number>50</number>
+     </property>
+     <property name="topMargin">
+      <number>20</number>
+     </property>
+     <property name="rightMargin">
+      <number>50</number>
+     </property>
+     <property name="bottomMargin">
+      <number>20</number>
+     </property>
+     <item row="0" column="0">
+      <widget class="QLabel" name="labelMatiere">
+       <property name="text">
+        <string>Matière :</string>
+       </property>
+      </widget>
+     </item>
+     <item row="0" column="1">
+      <widget class="QComboBox" name="comboBoxMatiere">
+       <item>
+        <property name="text">
+         <string>Acier</string>
+        </property>
+       </item>
+       <item>
+        <property name="text">
+         <string>Aluminium</string>
+        </property>
+       </item>
+       <item>
+        <property name="text">
+         <string>Inox</string>
+        </property>
+       </item>
+       <item>
+        <property name="text">
+         <string>Fonte</string>
+        </property>
+       </item>
+       <item>
+        <property name="text">
+         <string>Plastique</string>
+        </property>
+       </item>
+       <item>
+        <property name="text">
+         <string>Titane</string>
+        </property>
+       </item>
+       <item>
+        <property name="text">
+         <string>Cuivre</string>
+        </property>
+       </item>
+       <item>
+        <property name="text">
+         <string>Laiton</string>
+        </property>
+       </item>
+      </widget>
+     </item>
+     <item row="1" column="0">
+      <widget class="QLabel" name="labelVitesseCoupe">
+       <property name="text">
+        <string>Vitesse de coupe (m/min)</string>
+       </property>
+      </widget>
+     </item>
+     <item row="1" column="1">
+      <widget class="QLineEdit" name="lineEditVitesseCoupe"/>
+     </item>
+     <item row="2" column="0">
+      <widget class="QLabel" name="labelVitesseAvance">
+       <property name="text">
+        <string>vitesse d'avance (mm/min)</string>
+       </property>
+      </widget>
+     </item>
+     <item row="2" column="1">
+      <widget class="QLineEdit" name="lineEditVitesseAvance"/>
+     </item>
+     <item row="3" column="0">
+      <widget class="QLabel" name="labelTypeOutil">
+       <property name="text">
+        <string>Type outil :</string>
+       </property>
+      </widget>
+     </item>
+     <item row="3" column="1">
+      <widget class="QComboBox" name="comboBoxTypeOutil">
+       <item>
+        <property name="text">
+         <string>Fraise</string>
+        </property>
+       </item>
+       <item>
+        <property name="text">
+         <string>Foret</string>
+        </property>
+       </item>
+       <item>
+        <property name="text">
+         <string>Taraud</string>
+        </property>
+       </item>
+       <item>
+        <property name="text">
+         <string>Alésoir</string>
+        </property>
+       </item>
+       <item>
+        <property name="text">
+         <string>Outil de tour</string>
+        </property>
+       </item>
+       <item>
+        <property name="text">
+         <string>Plaquette</string>
+        </property>
+       </item>
+      </widget>
+     </item>
+     <item row="4" column="0">
+      <widget class="QLabel" name="labelPareurOutil">
+       <property name="text">
+        <string>Pareur outil :</string>
+       </property>
+      </widget>
+     </item>
+     <item row="4" column="1">
+      <widget class="QComboBox" name="comboBoxPareurOutil">
+       <item>
+        <property name="text">
+         <string>Mandrin</string>
+        </property>
+       </item>
+       <item>
+        <property name="text">
+         <string>Pince</string>
+        </property>
+       </item>
+       <item>
+        <property name="text">
+         <string>Cône ISO</string>
+        </property>
+       </item>
+       <item>
+        <property name="text">
+         <string>HSK</string>
+        </property>
+       </item>
+       <item>
+        <property name="text">
+         <string>Capto</string>
+        </property>
+       </item>
+       <item>
+        <property name="text">
+         <string>VDI</string>
+        </property>
+       </item>
+      </widget>
+     </item>
+     <item row="5" column="0">
+      <widget class="QLabel" name="labelProfondeurPasse">
+       <property name="text">
+        <string>Profondeur de passe (mm)</string>
+       </property>
+      </widget>
+     </item>
+     <item row="5" column="1">
+      <widget class="QLineEdit" name="lineEditProfondeurPasse"/>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <spacer name="verticalSpacer">
+     <property name="orientation">
+      <enum>Qt::Orientation::Vertical</enum>
+     </property>
+     <property name="sizeHint" stdset="0">
+      <size>
+       <width>20</width>
+       <height>40</height>
+      </size>
+     </property>
+    </spacer>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="horizontalLayoutButtons">
+     <item>
+      <widget class="QPushButton" name="backButton">
+       <property name="minimumSize">
+        <size>
+         <width>200</width>
+         <height>50</height>
+        </size>
+       </property>
+       <property name="font">
+        <font>
+         <bold>true</bold>
+        </font>
+       </property>
+       <property name="text">
+        <string>Retour</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <spacer name="horizontalSpacer_buttons">
+       <property name="orientation">
+        <enum>Qt::Orientation::Horizontal</enum>
+       </property>
+       <property name="sizeHint" stdset="0">
+        <size>
+         <width>40</width>
+         <height>20</height>
+        </size>
+       </property>
+      </spacer>
+     </item>
+     <item>
+      <widget class="QPushButton" name="validerButton">
+       <property name="minimumSize">
+        <size>
+         <width>200</width>
+         <height>50</height>
+        </size>
+       </property>
+       <property name="font">
+        <font>
+         <bold>true</bold>
+        </font>
+       </property>
+       <property name="text">
+        <string>Valider</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
