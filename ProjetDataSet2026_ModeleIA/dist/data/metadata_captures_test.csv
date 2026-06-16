@@ -1,3 +1,13 @@
 id_session,time_session,condition_charge,duree,frequence_son,frequence_vibration,fichier_son,fichier_vibration,niveau_tension
-1,2026-05-29_14:45,B_frein,30,15000,44100,son_1.csv,vib_1.csv,20
-2,2026-05-29_14:46,B_frein,30,15000,44100,son_2.csv,vib_2.csv,20
+1,2026-06-12_12:51,A_vide,15,16000,10,son_1.csv,vib_1.csv,0
+2,2026-06-12_12:52,A_vide,15,16000,10,son_2.csv,vib_2.csv,0
+3,2026-06-12_12:56,A_vide,15,16000,10,son_3.csv,vib_3.csv,0
+4,2026-06-12_13:08,A_vide,15,16000,10,son_4.csv,vib_4.csv,0
+5,2026-06-12_13:12,B_frein,15,16000,10,son_5.csv,vib_5.csv,40
+6,2026-06-12_13:17,A_vide,15,16000,10,son_6.csv,vib_6.csv,60
+7,2026-06-12_13:22,B_frein,15,16000,10,son_7.csv,vib_7.csv,80
+8,2026-06-16_12:09,A_vide,15,16000,200,son_8.csv,vib_8.csv,0
+9,2026-06-16_12:10,A_vide,15,16000,200,son_9.csv,vib_9.csv,0
+10,2026-06-16_12:11,A_vide,15,16000,200,son_10.csv,vib_10.csv,0
+11,2026-06-16_12:11,A_vide,15,16000,200,son_11.csv,vib_11.csv,0
+12,2026-06-16_14:55,B_frein,15,16000,200,son_12.csv,vib_12.csv,20

@@ -70,15 +70,16 @@ supervisionMoteur::supervisionMoteur(SessionData *data, QWidget *parent) :
     connect(ui->demarrerButton, &QPushButton::clicked, this, [this]() {
         ui->demarrerButton->setEnabled(false);
 
-        // Préparation de la réception UDP
+        // Préparation de la réception UDP sur le port dédié IHM
+        // (sans partage : un conflit de port doit échouer franchement
+        // plutôt que voler les paquets du client UDP Python)
         m_udpSocket->close();
-        bool ok = m_udpSocket->bind(QHostAddress::AnyIPv4,
-                                    ESP32_PORT,
-                                    QUdpSocket::ShareAddress | QUdpSocket::ReuseAddressHint);
+        bool ok = m_udpSocket->bind(QHostAddress::AnyIPv4, PORT_ECOUTE_IHM);
 
         if (!ok) {
             QMessageBox::warning(this, "Erreur UDP",
-                                 "Impossible d'écouter le port 9091.");
+                                 QString("Impossible d'écouter le port %1.")
+                                     .arg(PORT_ECOUTE_IHM));
         }
 
         resetChart();
@@ -149,7 +150,7 @@ void supervisionMoteur::actualiserTimer()
 
 void supervisionMoteur::envoyerDonneesAuServeur()
 {
-    const QString host = "172.21.1.87";
+    const QString host = "172.21.1.197";
     const quint16 port = 9090;
 
     m_socket->connectToHost(host, port);

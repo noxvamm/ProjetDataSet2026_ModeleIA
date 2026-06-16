@@ -58,3 +58,5 @@ id_session,time_session,condition_charge,duree,frequence_son,frequence_vibration
 70,2026-05-21_13:52,B_frein,15,16000,50,son_70.csv,vib_70.csv,100
 58,2026-05-21_15:43,B_frein,15,16000,50,son_58.csv,vib_58.csv,20
 59,2026-05-21_15:43,A_vide,15,16000,50,son_59.csv,vib_59.csv,20
+71,2026-06-12_13:30,B_frein,15,16000,50,son_71.csv,vib_71.csv,0
+72,2026-06-12_13:32,B_frein,15,16000,50,son_72.csv,vib_72.csv,0

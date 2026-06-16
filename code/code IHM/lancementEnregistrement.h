@@ -33,8 +33,12 @@ private slots:
 
 private:
     // --- Configuration réseau ESP32 ---
-    const QString ESP32_IP = "172.21.1.157";
-    const quint16 ESP32_PORT = 9091;
+    // ⚠️ IP DHCP : vérifier l'IP réelle de l'ESP32 (affichée sur son moniteur
+    // série au démarrage) avant chaque session
+    const QString ESP32_IP = "172.21.1.198";
+    const quint16 ESP32_PORT = 9092;        // port de commande START/STOP de l'ESP32
+    const quint16 PORT_ECOUTE_IHM = 9093;   // port local de réception des données
+                                            // (9091 est réservé au client UDP Python)
 
     Ui::lancementEnregistrement *ui;
     SessionData *m_data;

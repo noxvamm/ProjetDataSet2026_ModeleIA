@@ -1,0 +1,24 @@
+=== HYPERPARAMÈTRES ===
+
+-- Signal / Mel --
+IMG_SIZE           = (128, 128)
+SON_N_MELS         = 64
+VIB_N_FFT          = 128
+VIB_HOP            = 32
+VIB_N_MELS         = 32
+
+-- Window slicing & Augmentation --
+WINDOW_DUREE_SON   = 1.0
+WINDOW_OVERLAP     = 0.75
+N_AUGMENT_TRAIN    = 4
+NOISE_SNR_DB       = 25
+TIME_SHIFT_PCT     = 0.1
+SPECAUG_TIME_FRAC  = 0.1
+SPECAUG_FREQ_FRAC  = 0.1
+SPECAUG_N_MASKS    = 2
+
+-- Entraînement --
+TEST_RATIO         = 0.2
+EPOCHS             = 80
+BATCH_SIZE         = 16
+SEED               = 42

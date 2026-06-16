@@ -41,11 +41,10 @@ lancementEnregistrement::lancementEnregistrement(SessionData *data, QWidget *par
 
         ui->demarrerButton->setEnabled(false);
 
-        // Bind UDP
+        // Bind UDP sur le port dédié IHM (sans partage : un conflit de port
+        // doit échouer franchement plutôt que voler les paquets d'un autre process)
         m_udpSocket->close();
-        bool ok = m_udpSocket->bind(QHostAddress::AnyIPv4,
-                                    ESP32_PORT,
-                                    QUdpSocket::ShareAddress | QUdpSocket::ReuseAddressHint);
+        bool ok = m_udpSocket->bind(QHostAddress::AnyIPv4, PORT_ECOUTE_IHM);
 
         if (!ok) {
             ui->etatValueLabel->setText("Erreur UDP");
@@ -112,7 +111,8 @@ void lancementEnregistrement::actualiserTimer()
 
 void lancementEnregistrement::envoyerDonneesAuServeur()
 {
-    const QString host = "172.21.1.87";
+    // ⚠️ IP du PC qui fait tourner serveurTCP_metadonnes_moteur.py — à vérifier le jour J
+    const QString host = "172.21.1.197";
     const quint16 port = 9090;
 
     m_socket->connectToHost(host, port);

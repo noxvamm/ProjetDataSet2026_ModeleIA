@@ -8,33 +8,56 @@
 #define I2S_SD   32
 #define I2S_WS   25
 #define I2S_SCK  14
-#define SAMPLE_RATE 44000
+// 16 kHz : doit rester aligné avec SAMPLE_RATE_SON du client UDP Python
+// et avec la fréquence du dataset d'entraînement du modèle
+#define SAMPLE_RATE 16000
 #define BUFFER_LEN 128
+
+// Trame son : 128 échantillons × 8 caractères max (",-262143") + en-tête.
+// 1500 reste sous le MTU WiFi (pas de fragmentation UDP).
+#define SOUND_MSG_SIZE 1500
 
 const char* ssid = "lewifiduciel";
 const char* password = "cielmonwifi";
 
-// Deux destinataires UDP : Noa + Ege
-const char* udpAddress1 = "172.21.1.69";   // Noa
-const char* udpAddress2 = "172.21.1.87";   // Ege
-const int   udpPort     = 9091;
+// Destinataires UDP — ⚠️ IP DHCP du lycée : à vérifier avec ipconfig le jour J
+const char* IP_NOA   = "172.21.1.197";  // PC Noa (client UDP Python) — relevée le 12/06
+const int   PORT_NOA = 9091;
 
+const char* IP_EGE   = "172.21.1.197";  // PC Ege
+const int   PORT_EGE = 9092;
+
+// IHM Qt : port dédié pour ne pas entrer en conflit avec le client UDP
+// Python quand les deux tournent sur le même PC (un port = un consommateur)
+const char* IP_IHM   = "172.21.1.197";  // PC qui fait tourner l'IHM
+const int   PORT_IHM = 9093;
+
+// Port d'écoute des commandes START/STOP.
+// L'IHM Qt envoie sur 9092 (ESP32_PORT) : toute appli qui pilote
+// l'acquisition doit envoyer ses commandes sur CE port.
+const int   PORT_COMMANDE = 9092;
+
+// Instance UDP unique — partagée entre loop() (trames SOUND) et le callback
+// BLE notifyCB() (trames VIB) qui tourne sur une AUTRE tâche FreeRTOS.
+// Le mutex empêche les deux envois de s'entremêler dans le même paquet
+// (sans lui : échantillons corrompus type "-7116V" dans les CSV).
 WiFiUDP udp;
-// Elles sont controlées par les commandes udp start et stop de l'application Dataset
-bool microActive = false;// active ou coupe l’acquisition du micro I2S
-bool vibActive   = false;// active ou coupe l'acquisition des vibrations BLE
+SemaphoreHandle_t udpMutex;
+
+// Flags
+bool microActive = false;
+bool vibActive   = false;
 
 // BLE
 String targetName = "WTVB01-BT50";
-BLEUUID serviceUUID("0000ffe5-0000-1000-8000-00805f9a34fb");// ouvre l service du capteur 
-BLEUUID dataUUID   ("0000ffe4-0000-1000-8000-00805f9a34fb");// carac qui envoie les vibrations
-BLEUUID cmdUUID    ("0000ffe9-0000-1000-8000-00805f9a34fb");// carac qui envoie les commandes
+BLEUUID serviceUUID("0000ffe5-0000-1000-8000-00805f9a34fb");
+BLEUUID dataUUID   ("0000ffe4-0000-1000-8000-00805f9a34fb");
+BLEUUID cmdUUID    ("0000ffe9-0000-1000-8000-00805f9a34fb");
 
-BLERemoteCharacteristic* cmdChar;// cette ligne démmarre l'envoie des vibrations ( pointeur pour stocker la caractéristique)
+BLERemoteCharacteristic* cmdChar;
+std::vector<uint8_t> vibFrame;
 
-std::vector<uint8_t> vibFrame;// le capteur n'envoie pas tout d'un coup ( fragment BLE)
-
-uint16_t read16(const std::vector<uint8_t>& b, int i) {// combine deux octet pour obtenir un valeur 16bits
+uint16_t read16(const std::vector<uint8_t>& b, int i) {
   return b[i] | (b[i+1] << 8);
 }
 
@@ -47,7 +70,7 @@ void notifyCB(BLERemoteCharacteristic*, uint8_t* data, size_t len, bool) {
 
   vibFrame.insert(vibFrame.end(), data, data + len);
 
-  if (vibFrame.size() >= 28 && vibFrame[0] == 0x55 && vibFrame[1] == 0x61) {// condition si la trame fait 28 octet et la trame commence 0x55 et 0x61 on peut décoder
+  if (vibFrame.size() >= 28 && vibFrame[0] == 0x55 && vibFrame[1] == 0x61) {
 
     uint16_t VX  = read16(vibFrame, 2);
     uint16_t VY  = read16(vibFrame, 4);
@@ -70,18 +93,28 @@ void notifyCB(BLERemoteCharacteristic*, uint8_t* data, size_t len, bool) {
       VX, VY, VZ, ADX, ADY, ADZ, TEMP,
       DX, DY, DZ, HZX, HZY, HZZ
     );
+
+    // Envois protégés par le mutex (cf. déclaration de udpMutex)
+    xSemaphoreTake(udpMutex, portMAX_DELAY);
+
     // Envoi Noa
-    udp.beginPacket(udpAddress1, udpPort);
+    udp.beginPacket(IP_NOA, PORT_NOA);
     udp.print(msg);
     udp.endPacket();
 
     // Envoi Ege
-    udp.beginPacket(udpAddress2, udpPort);
+    udp.beginPacket(IP_EGE, PORT_EGE);
     udp.print(msg);
     udp.endPacket();
 
+    // Envoi IHM
+    udp.beginPacket(IP_IHM, PORT_IHM);
+    udp.print(msg);
+    udp.endPacket();
+
+    xSemaphoreGive(udpMutex);
+
     Serial.println(msg);
-    Serial.println();
     vibFrame.clear();
   }
 }
@@ -116,7 +149,6 @@ void setup() {
   Serial.begin(115200);
   Serial.println("BOOT OK");
 
-  // WiFi
   WiFi.begin(ssid, password);
   Serial.println("WiFi connecting...");
   while (WiFi.status() != WL_CONNECTED) {
@@ -127,16 +159,17 @@ void setup() {
   Serial.print("IP ESP32 : ");
   Serial.println(WiFi.localIP());
 
-  udp.begin(udpPort);
+  // Mutex protégeant l'instance UDP partagée entre loop() et le callback BLE
+  udpMutex = xSemaphoreCreateMutex();
+
+  // Écoute des commandes START/STOP (port aligné sur l'IHM)
+  udp.begin(PORT_COMMANDE);
   Serial.println("UDP READY");
 
   // BLE
-  Serial.println("BLE init...");
   BLEDevice::init("");
-
   BLEScan* scan = BLEDevice::getScan();
   scan->setActiveScan(true);
-  Serial.println("Scanning BLE...");
   BLEScanResults* res = scan->start(5);
 
   BLEAdvertisedDevice* target = nullptr;
@@ -145,45 +178,21 @@ void setup() {
       target = new BLEAdvertisedDevice(res->getDevice(i));
   }
 
-  if (!target) {
-    Serial.println("ERROR: Capteur BLE introuvable !");
-    return;
-  }
-  Serial.println("Capteur BLE trouvé !");
+  if (!target) { Serial.println("ERROR: Capteur BLE introuvable !"); return; }
 
   BLEClient* client = BLEDevice::createClient();
-  Serial.println("Connexion BLE...");
   client->connect(target);
-  Serial.println("BLE CONNECTED");
-
   client->setMTU(247);
 
   BLERemoteService* service = client->getService(serviceUUID);
   if (!service) { Serial.println("SERVICE FAIL"); return; }
-  Serial.println("SERVICE OK");// L’ESP32 a trouvé le service BLE du capteur.
 
   BLERemoteCharacteristic* dataChar = service->getCharacteristic(dataUUID);
   cmdChar = service->getCharacteristic(cmdUUID);
   if (!dataChar || !cmdChar) { Serial.println("CHAR FAIL"); return; }
-  Serial.println("CHAR OK");// ’ESP32 a trouvé les characteristics 
 
   uint8_t startCmd[4] = {0x55,0x01,0x01,0xA7};
   cmdChar->writeValue(startCmd,4);
-  delay(100);
-
-  // IMPORTANT : bascule le capteur en MODE VIBRATION.
-  // Sans cette commande, les trames 0x55 0x61 arrivent bien mais les valeurs
-  // (VX, VY, VZ, ...) restent à 0.
-  uint8_t modeVib[4] = {0x55,0x02,0x01,0xA8};
-  cmdChar->writeValue(modeVib,4);
-  delay(100);
-
-  // Règle le débit d'envoi des trames
-  uint8_t rrate[4] = {0x55,0x03,0x14,0x6C};
-  cmdChar->writeValue(rrate,4);
-  delay(100);
-
-  Serial.println("CMD SENT");// L''ESP32 à envoyer la commande start
 
   dataChar->registerForNotify(notifyCB);
   Serial.println("NOTIFY READY");
@@ -192,51 +201,76 @@ void setup() {
 // LOOP
 void loop() {
 
+  // Réception des commandes START/STOP
   int size = udp.parsePacket();
   if (size > 0) {
     char cmd[20];
     int len = udp.read(cmd, sizeof(cmd)-1);
-    cmd[len] = '\0';  // FIN DE CHAINE → évite les bugs
+    if (len < 0) len = 0;
+    cmd[len] = '\0';
 
-    if (String(cmd).startsWith("START")) {// débute l'acquisition 
-      setupI2S();// initialise le micro I2S
-      microActive = true;// active l'envoi du son
-      vibActive   = true;// active l'envoi des vibrations
-      vibFrame.clear();   // IMPORTANT, on vide la trame BLE 
-      Serial.println("START RECEIVED");
+    if (String(cmd).startsWith("START")) {
+      setupI2S();
+      microActive = true;
+      vibActive = true;
+      vibFrame.clear();
+      Serial.print("START depuis ");
+      Serial.println(udp.remoteIP());
     }
 
-    if (String(cmd).startsWith("STOP")) {// on coupe l'envoie des acquisitions
-      microActive = false;// on coupe l'envoie du micro
-      vibActive   = false;// on coupe l'envoie des vibrationq
-      Serial.println("STOP RECEIVED");
+    if (String(cmd).startsWith("STOP")) {
+      microActive = false;
+      vibActive = false;
+      Serial.print("STOP depuis ");
+      Serial.println(udp.remoteIP());
     }
   }
 
+  // Envoi du son
   if (microActive) {
     int32_t samples[BUFFER_LEN];
     size_t bytesRead;
 
     i2s_read(I2S_NUM_0, samples, sizeof(samples), &bytesRead, portMAX_DELAY);
 
-    char msg[300];
+    static char msg[SOUND_MSG_SIZE];
     int p = snprintf(msg, sizeof(msg), "SOUND,%lu", millis());
 
     int n = bytesRead / sizeof(int32_t);
-    for (int i = 0; i < n; i++)
-      p += snprintf(msg+p, sizeof(msg)-p, ",%ld", samples[i] >> 13);
+    for (int i = 0; i < n; i++) {
+      int ecrit = snprintf(msg+p, sizeof(msg)-p, ",%ld", (long)(samples[i] >> 13));
+      if (ecrit < 0 || p + ecrit >= (int)sizeof(msg)) break;
+      p += ecrit;
+    }
+
+    // Envois protégés par le mutex (cf. déclaration de udpMutex)
+    xSemaphoreTake(udpMutex, portMAX_DELAY);
 
     // Envoi Noa
-    udp.beginPacket(udpAddress1, udpPort);
-    udp.write((uint8_t*)msg, p);
-    udp.endPacket();
-    
-    // Envoi Ege
-    udp.beginPacket(udpAddress2, udpPort);
+    udp.beginPacket(IP_NOA, PORT_NOA);
     udp.write((uint8_t*)msg, p);
     udp.endPacket();
 
-    Serial.println();
-    Serial.println(msg);
+    // Envoi Ege
+    udp.beginPacket(IP_EGE, PORT_EGE);
+    udp.write((uint8_t*)msg, p);
+    udp.endPacket();
+
+    // Envoi IHM
+    udp.beginPacket(IP_IHM, PORT_IHM);
+    udp.write((uint8_t*)msg, p);
+    udp.endPacket();
+
+    xSemaphoreGive(udpMutex);
+
+    // Pas de Serial.println(msg) ici : imprimer ~1 ko à 115200 bauds
+    // prend ~90 ms et ferait chuter le débit de 125 paquets/s à ~10.
+    // On loggue juste un battement toutes les ~2 s pour vérifier l'activité.
+    static uint32_t paquetsEnvoyes = 0;
+    paquetsEnvoyes++;
+    if (paquetsEnvoyes % 250 == 0) {
+      Serial.print("SOUND paquets envoyes : ");
+      Serial.println(paquetsEnvoyes);
+    }
   }
 }

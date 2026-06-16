@@ -134,6 +134,29 @@ def signal_vers_mel_vib(signal, sr, hp):
     return tf.image.resize(np.expand_dims(S_dB, -1), hp['IMG_SIZE']).numpy()
 
 
+def charger_csv_numerique(path, ncols):
+    """Lit un CSV (en sautant le header) et ne conserve que les lignes dont
+    les `ncols` premières colonnes sont toutes numériques.
+
+    Remplace np.loadtxt qui plante dès la première valeur non numérique :
+    certaines captures d'avant le correctif mutex contiennent des fragments
+    de trames injectées (ex: 'I-B7', '0-') dans la colonne amplitude. On les
+    ignore silencieusement au lieu de faire échouer toute la prédiction.
+    """
+    out = []
+    with open(path, 'r', encoding='utf-8-sig') as f:
+        next(f, None)  # saute le header
+        for ligne in f:
+            parts = ligne.rstrip('\r\n').split(',')
+            if len(parts) < ncols:
+                continue
+            try:
+                out.append([float(parts[i]) for i in range(ncols)])
+            except ValueError:
+                continue  # ligne corrompue → ignorée
+    return np.array(out, dtype=float)
+
+
 def charger_capture(path_son, path_vib, duree=DUREE_DEFAUT):
     """Charge et tronque une capture. Retourne (signal_son, magnitude_vib)."""
     if not os.path.exists(path_son):
@@ -141,11 +164,11 @@ def charger_capture(path_son, path_vib, duree=DUREE_DEFAUT):
     if not os.path.exists(path_vib):
         raise FileNotFoundError(f"Fichier vibration introuvable : {path_vib}")
 
-    arr_son = np.loadtxt(path_son, delimiter=',', skiprows=1, usecols=(0, 1))
+    arr_son = charger_csv_numerique(path_son, 2)
     arr_son = tronquer_duree(arr_son, duree)
     data_son = arr_son[:, 1].astype(float)
 
-    arr_vib = np.loadtxt(path_vib, delimiter=',', skiprows=1, usecols=(0, 1, 2, 3))
+    arr_vib = charger_csv_numerique(path_vib, 4)
     arr_vib = tronquer_duree(arr_vib, duree)
     data_vibs = arr_vib[:, 1:4]
     magnitude = np.abs(data_vibs[:, 2])      # Option A : |VZ| seul — identique à arch4
@@ -176,15 +199,35 @@ def predire(model, data_son, magnitude, hp, sr_son=SR_SON_DEFAUT, sr_vib=SR_VIB_
 #  LECTURE DES CSV DE MÉTADONNÉES
 # =============================================================================
 
-def chercher_metadonnees(nom_fichier_son):
-    """Cherche le fichier son dans les CSV de métadonnées (test puis train).
-       Retourne la ligne correspondante (dict) ou None si introuvable."""
-    for csv_path in (CSV_TEST, CSV_TRAIN):
-        if not os.path.exists(csv_path):
+def chercher_metadonnees(chemin_son):
+    """Cherche le fichier son dans les CSV de métadonnées et retourne la ligne
+    correspondante (dict) ou None si introuvable.
+
+    Le dossier data/ est déduit du CHEMIN du fichier son sélectionné
+    (.../data/records[_test]/sons/son_X.csv → .../data/), ce qui fonctionne
+    aussi bien en .py qu'en .exe figé, où que soit placé l'exécutable.
+    Les constantes CSV_TEST / CSV_TRAIN servent de repli (script lancé depuis
+    le bon dossier de travail)."""
+    nom = os.path.basename(chemin_son)
+
+    sons_dir    = os.path.dirname(chemin_son)     # .../records[_test]/sons
+    records_dir = os.path.dirname(sons_dir)       # .../records[_test]
+    data_dir    = os.path.dirname(records_dir)    # .../data
+
+    candidats = [
+        os.path.join(data_dir, 'metadata_captures_test.csv'),
+        os.path.join(data_dir, 'metadata_captures_moteur.csv'),
+        CSV_TEST, CSV_TRAIN,                       # repli mode .py
+    ]
+
+    vus = set()
+    for csv_path in candidats:
+        if csv_path in vus or not os.path.exists(csv_path):
             continue
-        with open(csv_path, 'r', encoding='utf-8') as f:
+        vus.add(csv_path)
+        with open(csv_path, 'r', encoding='utf-8-sig') as f:
             for row in csv.DictReader(f):
-                if row.get('fichier_son') == nom_fichier_son:
+                if row.get('fichier_son') == nom:
                     return row
     return None
 
@@ -345,8 +388,8 @@ class Application(tk.Tk):
             # --- Affichage ---
             self.lbl_pred.config(text=f"Tension prédite : {pred:.1f} %")
 
-            # Recherche des métadonnées (tension réelle, condition) via le nom du fichier son
-            session = chercher_metadonnees(os.path.basename(self.path_son))
+            # Recherche des métadonnées (tension réelle, condition) via le chemin du fichier son
+            session = chercher_metadonnees(self.path_son)
             niveau_reel = session.get('niveau_tension') if session else None
             condition   = session.get('condition_charge') if session else None
 

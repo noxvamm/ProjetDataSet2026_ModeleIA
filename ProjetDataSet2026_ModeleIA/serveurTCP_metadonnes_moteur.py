@@ -64,16 +64,22 @@ def init_metadata(fichier):
 
 def get_next_id(fichier):
     """
-    Lit l'ID de la dernière session dans le CSV et retourne ID+1.
+    Retourne max(id) + 1 sur l'ensemble du fichier CSV.
     Chaque fichier (train / test) a son propre compteur indépendant.
+
+    On prend le MAXIMUM et non la dernière ligne : le fichier n'est pas
+    forcément trié par ID (des recaptures ont déjà été appendées hors
+    ordre pendant la campagne de mai), et repartir de la dernière ligne
+    réattribuait des ID existants — les nouvelles données s'appendaient
+    alors dans les fichiers son/vib d'anciennes sessions.
     """
     try:
         with open(fichier, 'r', encoding='utf-8') as f:
             lignes = list(csv.reader(f))
-        if len(lignes) <= 1:
+        ids = [int(l[0]) for l in lignes[1:] if l and l[0].strip().isdigit()]
+        if not ids:
             return 1
-        dernier_id = int(lignes[-1][0])
-        return dernier_id + 1
+        return max(ids) + 1
     except (FileNotFoundError, ValueError, IndexError):
         return 1
 
