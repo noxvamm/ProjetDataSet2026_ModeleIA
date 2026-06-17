@@ -21,15 +21,15 @@ const char* ssid = "lewifiduciel";
 const char* password = "cielmonwifi";
 
 // Destinataires UDP — ⚠️ IP DHCP du lycée : à vérifier avec ipconfig le jour J
-const char* IP_NOA   = "172.21.1.197";  // PC Noa (client UDP Python) — relevée le 12/06
+const char* IP_NOA   = "172.21.1.210";  // PC Noa (client UDP Python) — relevée le 12/06
 const int   PORT_NOA = 9091;
 
-const char* IP_EGE   = "172.21.1.197";  // PC Ege
+const char* IP_EGE   = "172.21.1.210";  // PC Ege
 const int   PORT_EGE = 9092;
 
 // IHM Qt : port dédié pour ne pas entrer en conflit avec le client UDP
 // Python quand les deux tournent sur le même PC (un port = un consommateur)
-const char* IP_IHM   = "172.21.1.197";  // PC qui fait tourner l'IHM
+const char* IP_IHM   = "172.21.1.210";  // PC qui fait tourner l'IHM
 const int   PORT_IHM = 9093;
 
 // Port d'écoute des commandes START/STOP.

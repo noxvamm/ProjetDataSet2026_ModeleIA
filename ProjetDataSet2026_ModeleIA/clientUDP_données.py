@@ -138,16 +138,26 @@ def ecrire_csv(file_path, header, lignes):
 
 # =============================================================================
 #  INITIALISATION DU SOCKET UDP
+#
+#  UDP : protocole rapide et « sans connexion » — l'ESP32 envoie ses paquets
+#  sans établir de liaison préalable, et sans garantie qu'ils arrivent tous.
+#  C'est le bon choix pour un flux de données capteur à haut débit, où perdre
+#  quelques paquets sur des milliers est sans conséquence (≠ le TCP fiable des
+#  métadonnées, où chaque octet doit arriver).
 # =============================================================================
 
+# socket(AF_INET, SOCK_DGRAM) : crée une « prise » réseau en mode UDP.
+#   AF_INET = adressage IPv4 ; SOCK_DGRAM = UDP (paquets indépendants).
+#   (À comparer à SOCK_STREAM = TCP, utilisé par le serveur de métadonnées.)
 with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
 
-    # Agrandissement du buffer de réception OS pour absorber les rafales de paquets
-    # Sans ça, le noyau peut rejeter des paquets si le programme n'est pas assez rapide
+    # setsockopt(SO_RCVBUF) : agrandit la file de réception du système d'exploitation
+    #   pour absorber les rafales de paquets. Sans ça, le noyau jette les paquets
+    #   en trop si le programme ne les lit pas assez vite → perte de données son.
     s.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, UDP_RCVBUF_SIZE)
     actual_bufsize = s.getsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF)
 
-    # Liaison du socket à toutes les interfaces sur le port UDP défini
+    # bind : réserve le port UDP pour ce programme, sur toutes les cartes réseau.
     s.bind((HOST, PORT_UDP))
 
     # Mode non-bloquant : recvfrom() lève BlockingIOError si aucun paquet n'est

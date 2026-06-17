@@ -150,7 +150,7 @@ void supervisionMoteur::actualiserTimer()
 
 void supervisionMoteur::envoyerDonneesAuServeur()
 {
-    const QString host = "172.21.1.197";
+    const QString host = "172.21.1.204";
     const quint16 port = 9090;
 
     m_socket->connectToHost(host, port);

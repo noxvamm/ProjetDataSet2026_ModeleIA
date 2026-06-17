@@ -6,8 +6,19 @@ from datetime import datetime
 # =============================================================================
 #  Serveur TCP — Indexation des métadonnées de capture (maquette moteur)
 #
-#  Deux destinations possibles pour chaque capture :
+#  RÔLE DANS LA CHAÎNE : ce programme reçoit de l'IHM les INFOS d'une capture
+#  (condition, durée, fréquences, niveau de tension) — pas les données capteur
+#  elles-mêmes, qui partent en UDP vers le client. Il leur attribue un numéro
+#  de session, les enregistre dans un CSV, et écrit un petit fichier d'état
+#  (current_session.txt) qui dit au client UDP sous quel nom ranger ses fichiers.
 #
+#  POURQUOI TCP (et pas UDP) : TCP est un canal FIABLE — chaque octet envoyé est
+#  garanti d'arriver, dans l'ordre. C'est ce qu'il faut pour des métadonnées
+#  (perdre la fiche d'une capture serait grave). Le son/vibration, eux, passent
+#  en UDP : plus rapide, mais sans garantie de livraison — perdre quelques
+#  échantillons sur des milliers n'est pas gênant.
+#
+#  Deux destinations possibles pour chaque capture :
 #    TRAIN → metadata_captures_moteur.csv  /  son_X.csv       / vib_X.csv
 #    TEST  → metadata_captures_test.csv    /  son_test_X.csv  / vib_test_X.csv
 #
@@ -17,8 +28,8 @@ from datetime import datetime
 # =============================================================================
 
 # --- CONFIGURATION ---
-HOST     = '0.0.0.0'
-PORT_APP = 9090
+HOST     = '0.0.0.0'   # '0.0.0.0' = écoute sur TOUTES les cartes réseau du PC
+PORT_APP = 9090        # port où l'IHM vient se connecter (doit être identique côté IHM)
 
 METADATA_FILE_TRAIN = 'data/metadata_captures_moteur.csv'
 METADATA_FILE_TEST  = 'data/metadata_captures_test.csv'
@@ -91,18 +102,21 @@ def normaliser_condition(valeur_brute):
 
 
 def read_all(conn):
-    """Lit tout le stream TCP jusqu'à fermeture de connexion ou timeout."""
-    buffer = b""
-    conn.settimeout(2.0)
+    """Lit tout le message TCP envoyé par l'IHM, jusqu'à fermeture ou timeout.
+
+    En TCP les données arrivent en « flux » (stream) : un même message peut être
+    découpé en plusieurs morceaux (chunks). On boucle donc pour tout rassembler."""
+    buffer = b""                     # accumulateur d'octets bruts (b"" = bytes vides)
+    conn.settimeout(2.0)             # abandonne la lecture si rien n'arrive pendant 2 s
     try:
         while True:
-            chunk = conn.recv(1024)
-            if not chunk:
+            chunk = conn.recv(1024)  # recv : lit jusqu'à 1024 octets sur la connexion
+            if not chunk:            # morceau vide = l'IHM a fermé la connexion
                 break
             buffer += chunk
     except socket.timeout:
         pass
-    return buffer.decode('utf-8')
+    return buffer.decode('utf-8')    # transforme les octets reçus en texte
 
 
 def demander_mode(dernier_mode):
@@ -142,15 +156,24 @@ dernier_mode = 'TRAIN'
 
 
 # =============================================================================
-#  BOUCLE PRINCIPALE
+#  BOUCLE PRINCIPALE — attend une IHM, indexe la capture, répond
+#
+#  Tourne indéfiniment : pour chaque connexion de l'IHM, on lit la ligne de
+#  métadonnées, on demande TRAIN/TEST, on calcule le numéro de session, on écrit
+#  le CSV + le fichier d'état current_session.txt, puis on confirme à l'IHM.
 # =============================================================================
 
+# socket(AF_INET, SOCK_STREAM) : crée une « prise » réseau en mode TCP.
+#   AF_INET = adressage IPv4 ; SOCK_STREAM = TCP (flux fiable et ordonné).
+#   Le « with » garantit que la prise se referme proprement à la fin.
 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-    s.bind((HOST, PORT_APP))
-    s.listen()
+    s.bind((HOST, PORT_APP))   # bind : réserve l'adresse + le port pour ce programme
+    s.listen()                 # listen : passe en mode « serveur », prêt à recevoir
     print("\nEn attente d'une connexion IHM...\n")
 
     while True:
+        # accept : met le programme EN PAUSE jusqu'à ce qu'une IHM se connecte.
+        #   Retourne une connexion dédiée (conn) + l'adresse du client (addr).
         conn, addr = s.accept()
         with conn:
             raw = read_all(conn)

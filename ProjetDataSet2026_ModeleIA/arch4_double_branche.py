@@ -1,29 +1,14 @@
-# =============================================================================
-#  ARCHITECTURE 4 — DOUBLE BRANCHE (Son + Vibration séparés) — Version moteur
-#  Projet BTS CIEL Dataset26 — Estimation du niveau de tension moteur (régression)
-#
-#  Ajouts par rapport à la v1 :
-#   - Window slicing : chaque capture son de 15 s est découpée en fenêtres de 1 s
-#     avec 50 % de recouvrement → ~29 segments d'entraînement par capture
-#   - Augmentation TRAIN UNIQUEMENT : bruit gaussien + time shift + SpecAugment
-#     (masquage temporel et fréquentiel sur le mel-spectrogramme)
-#   - Mel vibration adapté à un signal basse-fréquence (n_fft, hop_length)
-#   - Split TRAIN/TEST par capture (pas par segment) → pas de data leakage
-#   - Évaluation : MAE moyennée par capture (1 prédiction = moyenne des segments)
-#   - Vibration : |VZ| seul (au lieu de magnitude 3-axes) — voir CLAUDE.md (Option A)
-# =============================================================================
-
 import os
-import numpy as np
-import pandas as pd
-import librosa
-import matplotlib.pyplot as plt
-import tensorflow as tf
-from tensorflow.keras import layers, models
-from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
-from tqdm import tqdm
+import numpy as np                # calcul numérique (tableaux, maths)
+import pandas as pd               # lecture du CSV de métadonnées
+import librosa                    # traitement du signal audio (mel-spectrogrammes)
+import matplotlib.pyplot as plt   # tracé des graphiques de résultats
+import tensorflow as tf           # bibliothèque de deep learning (le réseau de neurones)
+from tensorflow.keras import layers, models   # briques pour construire le modèle
+from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau  # outils de pilotage de l'entraînement
+from tqdm import tqdm             # barre de progression dans la console
 import colorama
-from colorama import Fore, Style
+from colorama import Fore, Style  # couleurs du texte dans la console
 
 colorama.init()
 
@@ -36,6 +21,11 @@ RECORDS_DIR = os.path.join(DATA_BASE, 'records')
 
 # =============================================================================
 #  HYPERPARAMÈTRES — SIGNAL / MEL
+#
+#  Rôle : réglages qui contrôlent la transformation des signaux en images
+#  (mel-spectrogrammes). Un « hyperparamètre » est une valeur fixée à la main
+#  AVANT l'entraînement — à ne pas confondre avec les « poids » du réseau, que
+#  le modèle apprend tout seul pendant l'entraînement.
 # =============================================================================
 
 # Taille finale de chaque spectrogramme donné au CNN (hauteur × largeur en pixels).
@@ -79,6 +69,12 @@ SON_N_MELS = 64
 
 # =============================================================================
 #  HYPERPARAMÈTRES — WINDOW SLICING & AUGMENTATION
+#
+#  Rôle : réglages pour FABRIQUER PLUS de données d'entraînement à partir d'un
+#  petit dataset. Le « window slicing » découpe chaque capture en fenêtres ;
+#  l'« augmentation de données » crée des variantes légèrement modifiées (bruit,
+#  décalage temporel, masquage) pour forcer le modèle à généraliser au lieu de
+#  mémoriser par cœur les quelques captures disponibles.
 # =============================================================================
 
 # Durée de chaque fenêtre de découpage du signal son (en secondes).
@@ -130,6 +126,10 @@ SPECAUG_N_MASKS = 2
 
 # =============================================================================
 #  HYPERPARAMÈTRES — ENTRAÎNEMENT
+#
+#  Rôle : réglages qui pilotent l'apprentissage lui-même — quelle part des
+#  données réserver au test, combien de fois revoir les données (époques), par
+#  quels paquets (batch), et la graine aléatoire pour des résultats reproductibles.
 # =============================================================================
 
 # Proportion des captures réservée à l'évaluation finale (pas à l'entraînement).
@@ -140,7 +140,7 @@ TEST_RATIO = 0.2
 # Nombre maximum d'époques (passages complets sur les données d'entraînement).
 # L'EarlyStopping arrêtera avant si le modèle converge.
 # Augmenter si l'entraînement est encore en cours quand il s'arrête.
-EPOCHS = 80
+EPOCHS = 60
 
 # Nombre de segments traités simultanément avant chaque mise à jour des poids.
 # → Petit (8–16) : plus stable avec peu de données, mais entraînement plus lent.
@@ -156,7 +156,13 @@ tf.random.set_seed(SEED)
 
 
 # =============================================================================
-#  UTILS SIGNAL
+#  UTILS SIGNAL — Boîte à outils de traitement du signal
+#
+#  Rôle : toutes les fonctions qui préparent les signaux bruts (son, vibration)
+#  avant de les donner au modèle : normalisation, découpage en fenêtres,
+#  augmentation (bruit, décalage, SpecAugment) et conversion en mel-spectrogrammes.
+#  Ces fonctions ne font AUCUN apprentissage : elles ne font que transformer des
+#  données. C'est l'équivalent de la « préparation des ingrédients » avant cuisson.
 # =============================================================================
 
 def sauvegarder_hyperparametres(chemin_modele):
@@ -197,13 +203,13 @@ def normaliser(spectrogramme):
 def verifier_frequence_effective(nb_samples, duree, sr_declare, signal, session_id):
     """Compare fréquence effective (nb_samples / duree) à la fréquence déclarée IHM."""
     if duree <= 0:
-        print(f"{Fore.YELLOW}⚠ Session {session_id} ({signal}) : durée invalide ({duree}s).{Style.RESET_ALL}")
+        print(f"{Fore.YELLOW}Session {session_id} ({signal}) : durée invalide ({duree}s).{Style.RESET_ALL}")
         return 0.0
     sr_effective = nb_samples / duree
     ecart = abs(sr_effective - sr_declare) / sr_declare if sr_declare > 0 else 1.0
     if ecart > SEUIL_ECART:
         print(
-            f"{Fore.YELLOW}⚠ Session {session_id} ({signal}) : "
+            f"{Fore.YELLOW} Session {session_id} ({signal}) : "
             f"fréquence effective {sr_effective:.1f} Hz vs déclarée {sr_declare:.0f} Hz "
             f"(écart {ecart * 100:.1f} %){Style.RESET_ALL}"
         )
@@ -262,10 +268,20 @@ def spec_augment(mel_2d, time_mask_frac, freq_mask_frac, n_masks):
 
 
 def signal_vers_mel_son(signal, sr):
-    """Mel-spectrogramme du son normalisé puis redimensionné en IMG_SIZE."""
+    """Transforme un signal sonore (1D) en image 2D (mel-spectrogramme) pour le CNN.
+
+    Un mel-spectrogramme est une « photo » du son : l'axe horizontal est le
+    temps, l'axe vertical la fréquence, et la couleur l'intensité. L'échelle
+    'mel' imite l'oreille humaine (plus fine dans les graves que dans les aigus)."""
+    # melspectrogram : découpe le son en petites tranches de temps et calcule,
+    #   pour chacune, l'énergie présente dans chaque bande de fréquence.
     S = librosa.feature.melspectrogram(y=signal.astype(float), sr=sr, n_mels=SON_N_MELS)
+    # power_to_db : convertit l'énergie en décibels (échelle logarithmique),
+    #   comme la perçoit l'oreille. Fait ressortir les détails de faible intensité.
     S_dB = librosa.power_to_db(S, ref=np.max)
-    S_dB = normaliser(S_dB)
+    S_dB = normaliser(S_dB)                          # ramène les valeurs entre 0 et 1
+    # tf.image.resize : force toutes les images à la même taille IMG_SIZE,
+    #   car le CNN exige une entrée de dimensions fixes.
     return tf.image.resize(np.expand_dims(S_dB, -1), IMG_SIZE).numpy()
 
 
@@ -284,6 +300,10 @@ def signal_vers_mel_vib(signal, sr):
 
 # =============================================================================
 #  CHARGEMENT + CONSTRUCTION DES SEGMENTS
+#
+#  Rôle : lire les fichiers CSV de captures (son + vibration), les nettoyer, et
+#  les transformer en « segments » prêts pour le modèle — c'est-à-dire en couples
+#  d'images (mel_son, mel_vib) accompagnés du label de tension à prédire.
 # =============================================================================
 
 def tronquer_duree(arr, duree_s):
@@ -322,14 +342,6 @@ def charger_sessions(csv_path):
             arr_vib   = np.loadtxt(path_vib, delimiter=',', skiprows=1, usecols=(0, 1, 2, 3))
             arr_vib   = tronquer_duree(arr_vib, duree)
             data_vibs = arr_vib[:, 1:4]
-            # NOTE (6 mai 2026) — Décision Option A : on n'utilise que l'axe Z.
-            # Le capteur WTVB01-BT50 est monté tel que VX et VY sont perpendiculaires
-            # à la direction principale de vibration du moteur → VX≈271 cst et VY≈1 cst
-            # (bruit interne MEMS sous seuil). La magnitude 3-axes √(VX²+VY²+VZ²)
-            # aurait un plancher de ~271 qui écrase la dynamique basse de VZ.
-            # En prenant |VZ| seul, on récupère la vraie dynamique signal du moteur.
-            # Réversible : décommenter la ligne du dessous pour revenir à la magnitude 3 axes.
-            # magnitude = np.sqrt(data_vibs[:, 0] ** 2 + data_vibs[:, 1] ** 2 + data_vibs[:, 2] ** 2)
             magnitude = np.abs(data_vibs[:, 2])
             verifier_frequence_effective(len(magnitude), duree, sr_vib_declare, "vibration", session_id)
 
@@ -382,20 +394,42 @@ def construire_segments(sessions, augmenter=False):
 
 
 # =============================================================================
-#  MODÈLE
+#  MODÈLE — Réseau de neurones convolutif (CNN) à double branche
+#
+#  Rôle : définir l'architecture qui transforme les deux spectrogrammes
+#  (son + vibration) en une seule prédiction de tension.
+#
+#  Principe « double branche » : le son et la vibration sont deux signaux de
+#  nature physique différente. Chaque branche est un mini-CNN indépendant qui
+#  apprend ses propres filtres ; les deux ne se rejoignent qu'à la fin, juste
+#  avant la décision. Un CNN (réseau convolutif) est spécialisé dans l'analyse
+#  d'images : il empile des couches qui repèrent des motifs de plus en plus
+#  abstraits — ici, sur les spectrogrammes vus comme des images.
 # =============================================================================
 
 def construire_modele():
     # --- BRANCHE SON ---
+    # Input : porte d'entrée de la branche. shape = (128, 128, 1) = une image en
+    #   niveaux de gris de 128×128 pixels (le « 1 » = un seul canal de couleur).
     entree_son = layers.Input(shape=(IMG_SIZE[0], IMG_SIZE[1], 1), name="entree_son")
 
     # Bloc 1 — Détection des motifs de base (harmoniques simples, bordures)
+    # Conv2D : couche de convolution. Elle fait glisser de petits filtres sur
+    #   l'image (le spectrogramme) pour y repérer des motifs locaux.
     # 32 : nombre de filtres. Plus il y en a, plus le réseau détecte de motifs différents.
     # Doubler (→ 64) augmente la capacité mais aussi le temps de calcul.
     # (3, 3) : taille du filtre. 3×3 est standard. 5×5 capte des motifs plus larges.
+    # activation='relu' : garde les valeurs positives et met les négatives à zéro.
+    #   Cette « non-linéarité » est indispensable pour apprendre des relations
+    #   complexes (sans elle, le réseau ne saurait faire que des additions simples).
+    # padding='same' : ajoute une bordure de zéros pour que l'image garde la même
+    #   taille après la convolution (sinon elle rétrécirait à chaque couche).
     x1 = layers.Conv2D(32, (3, 3), activation='relu', padding='same')(entree_son)
+    # BatchNormalization : recentre et remet à l'échelle les valeurs entre deux
+    #   couches → stabilise et accélère nettement l'entraînement.
     x1 = layers.BatchNormalization()(x1)
-    # Réduit l'image par 2 → rend le modèle insensible aux petits décalages.
+    # MaxPooling2D : réduit l'image par 2 en ne gardant que la valeur maximale de
+    #   chaque carré 2×2 → résume l'info et rend le modèle insensible aux petits décalages.
     x1 = layers.MaxPooling2D((2, 2))(x1)
 
     # Bloc 2 — Détection de motifs plus complexes (combinaisons de fréquences)
@@ -436,8 +470,10 @@ def construire_modele():
     # Concatène les deux vecteurs → 256 valeurs (128 son + 128 vib).
     fusion = layers.Concatenate(name="fusion_son_vibration")([x1, x2])
 
-    # Couche de décision : 64 neurones analysent la combinaison son + vibration.
-    # Augmenter à 128 ou 256 si le modèle n'arrive pas à trouver la bonne règle.
+    # Dense : couche « entièrement connectée » où chaque neurone voit TOUTES les
+    #   valeurs précédentes (au contraire de Conv2D qui ne regarde que localement).
+    #   C'est la couche de décision : 64 neurones analysent la combinaison
+    #   son + vibration. Augmenter à 128/256 si le modèle peine à trouver la règle.
     z = layers.Dense(64, activation='relu')(fusion)
 
     # Dropout : désactive aléatoirement X % des neurones pendant l'entraînement.
@@ -454,14 +490,26 @@ def construire_modele():
         inputs=[entree_son, entree_vib], outputs=sortie,
         name="arch4_double_branche"
     )
-    # optimizer='adam' : algorithme standard. Remplacer par Adam(learning_rate=0.0005)
-    # pour un réglage plus fin si le modèle oscille en fin d'entraînement.
+    # compile : configure COMMENT le modèle va apprendre.
+    # optimizer='adam' : l'algorithme qui ajuste les poids du réseau à chaque
+    #   étape. Adam est le choix standard, robuste et rapide. Remplacer par
+    #   Adam(learning_rate=0.0005) pour un réglage plus fin si le modèle oscille.
+    # loss='mse' : erreur quadratique moyenne — la quantité que le modèle cherche
+    #   à minimiser. Le carré pénalise très fortement les grosses erreurs.
+    # metrics=['mae'] : erreur absolue moyenne, affichée pour SUIVRE l'entraînement.
+    #   Plus lisible que la MSE car exprimée dans l'unité du label (points de %).
     model.compile(optimizer='adam', loss='mse', metrics=['mae'])
     return model
 
 
 # =============================================================================
-#  PIPELINE PRINCIPAL
+#  PIPELINE PRINCIPAL — Déroulé complet de l'entraînement
+#
+#  Rôle : le « chef d'orchestre » exécuté quand on lance le script. Il enchaîne :
+#  chargement des sessions → découpage train/test PAR CAPTURE (pour éviter le
+#  « data leakage », c.-à-d. qu'un même enregistrement se retrouve à la fois en
+#  entraînement et en test, ce qui fausserait le score) → construction des
+#  segments → entraînement → évaluation (MAE) → graphiques de résultats.
 # =============================================================================
 
 print(f"\n{Fore.CYAN}=== Chargement des sessions ==={Style.RESET_ALL}")
